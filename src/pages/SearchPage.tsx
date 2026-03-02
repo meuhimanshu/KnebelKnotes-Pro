@@ -1,19 +1,63 @@
 import { useSearchParams, Link } from "react-router-dom";
-import { Search, Clock, Tag } from "lucide-react";
-import { useState, useMemo } from "react";
+import { Search, Clock, Tag, Folder } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import Layout from "@/components/Layout";
 import { searchArticles } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabaseClient";
+
+type CategoryResult = {
+  id: string;
+  name: string;
+  description: string | null;
+};
 
 const SearchPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialQuery = searchParams.get("q") || "";
   const [query, setQuery] = useState(initialQuery);
+  const [categoryResults, setCategoryResults] = useState<CategoryResult[]>([]);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   const results = useMemo(
     () => (initialQuery ? searchArticles(initialQuery) : []),
     [initialQuery]
   );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchCategories = async () => {
+      if (!initialQuery.trim()) {
+        setCategoryResults([]);
+        setCategoryError(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id, name, description")
+        .or(`name.ilike.%${initialQuery}%,description.ilike.%${initialQuery}%`)
+        .order("name", { ascending: true })
+        .limit(10);
+
+      if (!isMounted) return;
+      if (error) {
+        setCategoryError(error.message);
+        setCategoryResults([]);
+        return;
+      }
+
+      setCategoryResults(data ?? []);
+      setCategoryError(null);
+    };
+
+    void fetchCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [initialQuery]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +90,38 @@ const SearchPage = () => {
             {results.length} result{results.length !== 1 ? "s" : ""} for "
             <span className="font-medium text-foreground">{initialQuery}</span>"
           </p>
+        )}
+
+        {categoryError && (
+          <div className="mb-6 rounded-xl border border-border bg-destructive/10 p-4 text-sm text-destructive">
+            {categoryError}
+          </div>
+        )}
+
+        {categoryResults.length > 0 && (
+          <div className="mb-8">
+            <h2 className="font-display text-lg font-semibold text-foreground mb-3">Categories</h2>
+            <div className="space-y-3">
+              {categoryResults.map((category) => (
+                <div
+                  key={category.id}
+                  className="rounded-xl border border-border bg-card p-4 shadow-[var(--card-shadow)]"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-accent-foreground">
+                      <Folder className="h-3.5 w-3.5" />
+                    </span>
+                    <div>
+                      <p className="font-medium text-foreground">{category.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {category.description || "No description provided yet."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="space-y-3">

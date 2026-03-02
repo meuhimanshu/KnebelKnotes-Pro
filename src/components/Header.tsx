@@ -45,6 +45,12 @@ const Header = () => {
             Home
           </Link>
           <Link
+            to="/categories"
+            className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Categories
+          </Link>
+          <Link
             to="/search"
             className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
@@ -108,6 +114,13 @@ const Header = () => {
               className="rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
             >
               Home
+            </Link>
+            <Link
+              to="/categories"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+            >
+              Categories
             </Link>
             <Link
               to="/search"
