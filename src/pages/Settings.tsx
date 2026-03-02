@@ -175,9 +175,9 @@ const Settings = () => {
 
   return (
     <Layout>
-      <section className="container py-10">
+      <section className="container py-10 sm:py-12">
         <div className="mb-8">
-          <h1 className="font-display text-3xl font-bold text-foreground">Account Settings</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Account Settings</h1>
           <p className="mt-2 text-sm text-muted-foreground">Manage your role, profile, and security settings.</p>
         </div>
 
@@ -190,7 +190,7 @@ const Settings = () => {
               <CardDescription>Log in on the dedicated login page to access account settings.</CardDescription>
             </CardHeader>
             <CardFooter>
-              <Button asChild>
+              <Button asChild className="w-full sm:w-auto">
                 <Link to="/login">Go to login</Link>
               </Button>
             </CardFooter>
@@ -202,7 +202,7 @@ const Settings = () => {
                 <CardTitle>Role Information</CardTitle>
                 <CardDescription>Current permissions and role.</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-wrap items-center gap-3">
+              <CardContent className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
                 {role ? (
                   <Badge variant={isSuperAdmin ? "default" : "secondary"}>
                     {isSuperAdmin ? "Super Admin" : "Sub Admin"}
@@ -277,7 +277,7 @@ const Settings = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button type="submit" disabled={savingProfile || !isSuperAdmin}>
+                  <Button type="submit" disabled={savingProfile || !isSuperAdmin} className="w-full sm:w-auto">
                     {savingProfile ? "Saving..." : "Save profile"}
                   </Button>
                 </CardFooter>
@@ -304,7 +304,7 @@ const Settings = () => {
                   </div>
                 </CardContent>
                 <CardFooter>
-                  <Button type="submit" disabled={savingPassword}>
+                  <Button type="submit" disabled={savingPassword} className="w-full sm:w-auto">
                     {savingPassword ? "Updating..." : "Update password"}
                   </Button>
                 </CardFooter>
@@ -360,7 +360,7 @@ const Settings = () => {
                       </div>
                     </div>
                     <div>
-                      <Button type="submit" disabled={creatingSubAdmin}>
+                      <Button type="submit" disabled={creatingSubAdmin} className="w-full sm:w-auto">
                         {creatingSubAdmin ? "Creating..." : "Create sub admin"}
                       </Button>
                     </div>
@@ -380,7 +380,7 @@ const Settings = () => {
                           {subAdmins.map((subAdmin) => (
                             <div
                               key={subAdmin.id}
-                              className="flex flex-col justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 sm:flex-row sm:items-center"
+                              className="flex flex-col justify-between gap-3 rounded-xl border border-border/70 bg-muted/40 p-3 sm:flex-row sm:items-center sm:p-4"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar className="h-10 w-10">

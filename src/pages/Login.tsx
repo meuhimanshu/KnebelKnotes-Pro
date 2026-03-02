@@ -39,10 +39,10 @@ const Login = () => {
 
   return (
     <Layout>
-      <section className="container py-10">
+      <section className="container py-10 sm:py-12">
         <div className="mx-auto max-w-md">
           <div className="mb-6 text-center">
-            <h1 className="font-display text-3xl font-bold text-foreground">Log in</h1>
+            <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Log in</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Access your Knebel Knebel Knotes account.
             </p>
@@ -56,11 +56,11 @@ const Login = () => {
                 <CardTitle>You are already logged in</CardTitle>
                 <CardDescription>Manage your account or return to the homepage.</CardDescription>
               </CardHeader>
-              <CardFooter className="flex gap-2">
-                <Button asChild variant="secondary">
+              <CardFooter className="flex flex-col gap-2 sm:flex-row">
+                <Button asChild variant="secondary" className="w-full sm:w-auto">
                   <Link to="/settings">Account settings</Link>
                 </Button>
-                <Button asChild>
+                <Button asChild className="w-full sm:w-auto">
                   <Link to="/">Go home</Link>
                 </Button>
               </CardFooter>

@@ -50,14 +50,14 @@ const Categories = () => {
 
   return (
     <Layout>
-      <div className="container py-12">
+      <div className="container py-10 sm:py-12">
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="font-display text-3xl font-bold text-foreground">All Categories</h1>
+            <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">All Categories</h1>
             <p className="mt-2 text-muted-foreground">Browse categories for now.</p>
           </div>
           {!authLoading && user && (profile?.role === "super_admin" || profile?.role === "sub_admin") && (
-            <Button asChild>
+            <Button asChild className="w-full md:w-auto">
               <Link to="/categories/new">Create category</Link>
             </Button>
           )}
@@ -66,13 +66,13 @@ const Categories = () => {
         {loading && <div className="text-sm text-muted-foreground">Loading categories...</div>}
 
         {error && (
-          <div className="rounded-xl border border-border bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="rounded-2xl border border-border/70 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
           </div>
         )}
 
         {!loading && !error && categories.length === 0 && (
-          <div className="rounded-xl border border-dashed border-border bg-card/60 p-8 text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 p-6 text-sm text-muted-foreground sm:p-8">
             {authLoading
               ? "No categories yet."
               : user
@@ -87,7 +87,7 @@ const Categories = () => {
               <Link
                 key={category.id}
                 to={`/category/${category.id}`}
-                className="group rounded-xl border border-border bg-card p-5 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)]"
+                className="group rounded-2xl border border-border/70 bg-card/85 p-4 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)] sm:p-5"
               >
                 <h3 className="font-display text-base font-semibold text-foreground group-hover:text-primary transition-colors">
                   {category.name}

@@ -86,16 +86,24 @@ const renderContent = (content: string) => {
     } else if (/^\d+\.\s\*\*/.test(line)) {
       const html = line.replace(/^\d+\.\s/, "").replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       elements.push(
-        <li key={i} className="ml-4 mb-1 text-sm text-muted-foreground list-decimal" dangerouslySetInnerHTML={{ __html: html }} />
+        <li
+          key={i}
+          className="ml-4 mb-1 text-[15px] text-muted-foreground list-decimal sm:text-base"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       );
     } else if (line.startsWith("- **")) {
       const html = line.slice(2).replace(/\*\*(.*?)\*\*/g, '<strong class="text-foreground">$1</strong>');
       elements.push(
-        <li key={i} className="ml-4 mb-1 text-sm text-muted-foreground list-disc" dangerouslySetInnerHTML={{ __html: html }} />
+        <li
+          key={i}
+          className="ml-4 mb-1 text-[15px] text-muted-foreground list-disc sm:text-base"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       );
     } else if (line.startsWith("- ")) {
       elements.push(
-        <li key={i} className="ml-4 mb-1 text-sm text-muted-foreground list-disc">
+        <li key={i} className="ml-4 mb-1 text-[15px] text-muted-foreground list-disc sm:text-base">
           {line.slice(2)}
         </li>
       );
@@ -104,7 +112,11 @@ const renderContent = (content: string) => {
     } else {
       const html = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       elements.push(
-        <p key={i} className="mb-2 text-sm text-muted-foreground leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
+        <p
+          key={i}
+          className="mb-2 text-[15px] text-muted-foreground leading-relaxed sm:text-base"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
       );
     }
   }
@@ -139,9 +151,9 @@ const ArticleDetail = () => {
 
   return (
     <Layout>
-      <div className="container max-w-4xl py-10">
+      <div className="container max-w-4xl py-8 sm:py-10">
         {/* Breadcrumbs */}
-        <nav className="mb-6 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+        <nav className="mb-6 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground sm:text-sm">
           <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
           <ChevronRight className="h-3.5 w-3.5" />
           {parentCategory && (
@@ -165,10 +177,10 @@ const ArticleDetail = () => {
 
         {/* Article header */}
         <header className="mb-8">
-          <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground text-balance">
+          <h1 className="font-display text-2xl font-bold text-foreground text-balance sm:text-3xl">
             {article.title}
           </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <User className="h-3.5 w-3.5" />
               {article.author}
@@ -182,7 +194,7 @@ const ArticleDetail = () => {
             {article.tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground"
+                className="inline-flex items-center gap-1 rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium text-secondary-foreground sm:text-xs"
               >
                 <Tag className="h-2.5 w-2.5" />
                 {tag}
@@ -202,7 +214,7 @@ const ArticleDetail = () => {
                 <AccordionItem
                   key={i}
                   value={`section-${i}`}
-                  className="rounded-xl border border-border bg-card px-5 data-[state=open]:shadow-sm"
+                  className="rounded-2xl border border-border/70 bg-card/90 px-4 data-[state=open]:shadow-sm sm:px-5"
                 >
                   <AccordionTrigger className="font-display text-base font-semibold text-foreground hover:no-underline py-4">
                     {title}
@@ -215,7 +227,7 @@ const ArticleDetail = () => {
             })}
           </Accordion>
         ) : (
-          <article className="rounded-xl border border-border bg-card p-6 md:p-8">
+          <article className="rounded-2xl border border-border/70 bg-card/90 p-4 sm:p-6 md:p-8">
             {renderContent(article.content)}
           </article>
         )}

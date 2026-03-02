@@ -20,7 +20,7 @@ const SubAdmin = () => {
         <div className="container py-20 text-center">
           <h1 className="font-display text-2xl font-bold text-foreground">Access restricted</h1>
           <p className="mt-2 text-sm text-muted-foreground">This tab is available to Sub Admins only.</p>
-          <Button asChild className="mt-4">
+          <Button asChild className="mt-4 w-full sm:w-auto">
             <Link to="/">Go home</Link>
           </Button>
         </div>
@@ -30,8 +30,8 @@ const SubAdmin = () => {
 
   return (
     <Layout>
-      <div className="container py-12">
-        <h1 className="font-display text-3xl font-bold text-foreground">Sub Admin</h1>
+      <div className="container py-10 sm:py-12">
+        <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Sub Admin</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Use this space for sub-admin-specific tools and content updates.
         </p>

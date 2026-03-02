@@ -117,11 +117,11 @@ const SearchPage = () => {
 
   return (
     <Layout>
-      <div className="container max-w-3xl py-12">
-        <h1 className="font-display text-3xl font-bold text-foreground mb-6">Search Articles</h1>
+      <div className="container max-w-3xl py-10 sm:py-12">
+        <h1 className="font-display text-2xl font-bold text-foreground mb-6 sm:text-3xl">Search Articles</h1>
 
-        <form onSubmit={handleSearch} className="flex gap-2 mb-8">
-          <div className="relative flex flex-1 items-center gap-2 rounded-lg border border-input bg-background px-3">
+        <form onSubmit={handleSearch} className="mb-8 flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <input
               type="text"
@@ -133,7 +133,7 @@ const SearchPage = () => {
               }}
               onFocus={handleFocus}
               onBlur={handleBlur}
-              className="flex-1 bg-transparent py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              className="flex-1 bg-transparent py-2.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             {showSuggestions && effectiveQuery && suggestions.length > 0 && (
               <div
@@ -159,7 +159,7 @@ const SearchPage = () => {
               </div>
             )}
           </div>
-          <Button type="submit">Search</Button>
+          <Button type="submit" className="w-full sm:w-auto">Search</Button>
         </form>
 
         {effectiveQuery && (
@@ -170,7 +170,7 @@ const SearchPage = () => {
         )}
 
         {categoryError && (
-          <div className="mb-6 rounded-xl border border-border bg-destructive/10 p-4 text-sm text-destructive">
+          <div className="mb-6 rounded-2xl border border-border/70 bg-destructive/10 p-4 text-sm text-destructive">
             {categoryError}
           </div>
         )}
@@ -183,7 +183,7 @@ const SearchPage = () => {
                 <Link
                   key={category.id}
                   to={`/category/${category.id}`}
-                  className="group block rounded-xl border border-border bg-card p-4 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)]"
+                  className="group block rounded-2xl border border-border/70 bg-card/90 p-4 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)]"
                 >
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-accent-foreground">
@@ -212,7 +212,7 @@ const SearchPage = () => {
             <Link
               key={article.id}
               to={`/article/${article.slug}`}
-              className="group block rounded-xl border border-border bg-card p-5 transition-all hover:shadow-[var(--card-shadow-hover)] hover:-translate-y-0.5 animate-fade-in"
+              className="group block rounded-2xl border border-border/70 bg-card/90 p-4 transition-all hover:shadow-[var(--card-shadow-hover)] hover:-translate-y-0.5 animate-fade-in sm:p-5"
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <h3 className="font-display text-base font-semibold text-foreground group-hover:text-primary transition-colors">
@@ -236,13 +236,13 @@ const SearchPage = () => {
         </div>
 
         {effectiveQuery && !categoryLoading && categoryResults.length === 0 && results.length === 0 && (
-          <div className="rounded-xl border border-border bg-muted/50 p-10 text-center">
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-6 text-center sm:p-10">
             <p className="text-muted-foreground">No results found. Try a different search term.</p>
           </div>
         )}
 
         {!effectiveQuery && (
-          <div className="rounded-xl border border-border bg-muted/50 p-10 text-center">
+          <div className="rounded-2xl border border-border/70 bg-card/70 p-6 text-center sm:p-10">
             <Search className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
             <p className="text-muted-foreground">Enter a search term to find articles.</p>
           </div>

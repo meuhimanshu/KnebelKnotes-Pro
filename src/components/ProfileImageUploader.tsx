@@ -230,7 +230,7 @@ const ProfileImageUploader = ({ userId, initialPath, disabled, onUploaded }: Pro
             accept={ALLOWED_TYPES.join(",")}
             onChange={handleFileChange}
             disabled={disabled}
-            className="block text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
+            className="block text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
           />
         </div>
       </div>

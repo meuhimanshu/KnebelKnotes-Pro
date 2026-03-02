@@ -58,13 +58,14 @@ const FloatingNav = ({
           : "relative mx-auto w-fit",
         "transition-all duration-300",
         isVertical
-          ? "rounded-2xl border border-border bg-card/95 px-2 py-2 shadow-lg backdrop-blur"
-          : "rounded-full border border-border bg-card/95 px-2 py-1 shadow-lg backdrop-blur",
+          ? "rounded-2xl border border-border bg-card/95 px-2 py-2 shadow-[var(--card-shadow)] backdrop-blur"
+          : "rounded-full border border-border bg-card/95 px-2 py-1.5 shadow-[var(--card-shadow)] backdrop-blur",
+        "max-w-[92vw] sm:max-w-none",
         !isFixed || visible ? "translate-y-0 opacity-100" : "-translate-y-3 opacity-0 pointer-events-none",
         className,
       )}
     >
-      <nav className={cn("flex items-center gap-1", isVertical && "flex-col")}>
+      <nav className={cn("flex items-center gap-1.5", isVertical && "flex-col")}>
         {navItems.map((item) => {
           const isActive = activeLink === item.link;
           return (
@@ -78,15 +79,16 @@ const FloatingNav = ({
                 }
               }}
               className={cn(
-                "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-2 rounded-full px-3 py-2 text-[11px] font-medium transition-colors sm:py-1.5 sm:text-xs",
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted",
               )}
               aria-current={isActive ? "page" : undefined}
+              aria-label={item.name}
             >
               {item.icon ? <span className="h-4 w-4">{item.icon}</span> : null}
-              {!isVertical && <span>{item.name}</span>}
+              {!isVertical ? <span className="hidden sm:inline">{item.name}</span> : <span>{item.name}</span>}
             </a>
           );
         })}

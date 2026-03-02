@@ -46,9 +46,9 @@ const CreateCategory = () => {
 
   return (
     <Layout>
-      <section className="container py-12">
+      <section className="container py-10 sm:py-12">
         <div className="mb-8">
-          <h1 className="font-display text-3xl font-bold text-foreground">Create Category</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground sm:text-3xl">Create Category</h1>
           <p className="mt-2 text-muted-foreground">Add a new category to organize content.</p>
         </div>
 
@@ -61,7 +61,7 @@ const CreateCategory = () => {
               <CardDescription>Log in to create a new category.</CardDescription>
             </CardHeader>
             <CardFooter>
-              <Button asChild>
+              <Button asChild className="w-full sm:w-auto">
                 <Link to="/login">Go to login</Link>
               </Button>
             </CardFooter>
@@ -73,7 +73,7 @@ const CreateCategory = () => {
               <CardDescription>Only admins can create categories.</CardDescription>
             </CardHeader>
             <CardFooter>
-              <Button asChild variant="secondary">
+              <Button asChild variant="secondary" className="w-full sm:w-auto">
                 <Link to="/categories">Back to categories</Link>
               </Button>
             </CardFooter>
@@ -104,14 +104,15 @@ const CreateCategory = () => {
                     onChange={(event) => setDescription(event.target.value)}
                     placeholder="Short description (optional)"
                     rows={4}
+                    className="text-base"
                   />
                 </div>
               </CardContent>
-              <CardFooter className="flex gap-2">
-                <Button type="button" variant="secondary" onClick={() => navigate("/categories")}>
+              <CardFooter className="flex flex-col gap-2 sm:flex-row">
+                <Button type="button" variant="secondary" onClick={() => navigate("/categories")} className="w-full sm:w-auto">
                   Cancel
                 </Button>
-                <Button type="submit" disabled={saving}>
+                <Button type="submit" disabled={saving} className="w-full sm:w-auto">
                   {saving ? "Creating..." : "Create category"}
                 </Button>
               </CardFooter>
