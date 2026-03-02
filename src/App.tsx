@@ -6,12 +6,14 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Categories from "./pages/Categories";
+import CreateCategory from "./pages/CreateCategory";
 import CategoryDetail from "./pages/CategoryDetail";
 import ArticleDetail from "./pages/ArticleDetail";
 import SearchPage from "./pages/SearchPage";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import SubAdmin from "./pages/SubAdmin";
 
 const queryClient = new QueryClient();
 
@@ -25,11 +27,13 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/categories/new" element={<CreateCategory />} />
             <Route path="/category/:id" element={<CategoryDetail />} />
             <Route path="/article/:slug" element={<ArticleDetail />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/sub-admin" element={<SubAdmin />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -1,0 +1,4 @@
+project_id = "xtbddsjmchmjzsowanmo"
+
+[functions.create-sub-admin]
+verify_jwt = false

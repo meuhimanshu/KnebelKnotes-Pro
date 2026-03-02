@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import knebelLogo from "@/assets/knebel-logo.png";
 import AuthBar from "@/components/AuthBar";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Header = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const showSubAdminTab = profile?.role === "sub_admin";
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +59,14 @@ const Header = () => {
           >
             Search
           </Link>
+          {showSubAdminTab && (
+            <Link
+              to="/sub-admin"
+              className="rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Sub Admin
+            </Link>
+          )}
         </nav>
 
         <div className="flex items-center gap-2">
@@ -129,6 +140,15 @@ const Header = () => {
             >
               Search
             </Link>
+            {showSubAdminTab && (
+              <Link
+                to="/sub-admin"
+                onClick={() => setMobileOpen(false)}
+                className="rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
+              >
+                Sub Admin
+              </Link>
+            )}
           </div>
           <div className="mt-4 border-t border-border pt-4">
             <AuthBar variant="mobile" />

@@ -14,30 +14,37 @@ type CategoryResult = {
 
 const SearchPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get("q") || "";
-  const [query, setQuery] = useState(initialQuery);
+  const paramQuery = searchParams.get("q") || "";
+  const [query, setQuery] = useState(paramQuery);
   const [categoryResults, setCategoryResults] = useState<CategoryResult[]>([]);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categoryLoading, setCategoryLoading] = useState(false);
 
-  const results = useMemo(
-    () => (initialQuery ? searchArticles(initialQuery) : []),
-    [initialQuery]
-  );
+  const effectiveQuery = query.trim();
+
+  useEffect(() => {
+    setQuery(paramQuery);
+  }, [paramQuery]);
+
+  const results = useMemo(() => (effectiveQuery ? searchArticles(effectiveQuery) : []), [effectiveQuery]);
 
   useEffect(() => {
     let isMounted = true;
+    const searchTerm = effectiveQuery;
 
     const fetchCategories = async () => {
-      if (!initialQuery.trim()) {
+      if (!searchTerm) {
         setCategoryResults([]);
         setCategoryError(null);
+        setCategoryLoading(false);
         return;
       }
 
+      setCategoryLoading(true);
       const { data, error } = await supabase
         .from("categories")
         .select("id, name, description")
-        .or(`name.ilike.%${initialQuery}%,description.ilike.%${initialQuery}%`)
+        .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
         .order("name", { ascending: true })
         .limit(10);
 
@@ -45,19 +52,24 @@ const SearchPage = () => {
       if (error) {
         setCategoryError(error.message);
         setCategoryResults([]);
+        setCategoryLoading(false);
         return;
       }
 
       setCategoryResults(data ?? []);
       setCategoryError(null);
+      setCategoryLoading(false);
     };
 
-    void fetchCategories();
+    const debounce = window.setTimeout(() => {
+      void fetchCategories();
+    }, 200);
 
     return () => {
       isMounted = false;
+      window.clearTimeout(debounce);
     };
-  }, [initialQuery]);
+  }, [effectiveQuery]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,10 +97,10 @@ const SearchPage = () => {
           <Button type="submit">Search</Button>
         </form>
 
-        {initialQuery && (
+        {effectiveQuery && (
           <p className="mb-6 text-sm text-muted-foreground">
             {results.length} result{results.length !== 1 ? "s" : ""} for "
-            <span className="font-medium text-foreground">{initialQuery}</span>"
+            <span className="font-medium text-foreground">{effectiveQuery}</span>"
           </p>
         )}
 
@@ -103,27 +115,35 @@ const SearchPage = () => {
             <h2 className="font-display text-lg font-semibold text-foreground mb-3">Categories</h2>
             <div className="space-y-3">
               {categoryResults.map((category) => (
-                <div
+                <Link
                   key={category.id}
-                  className="rounded-xl border border-border bg-card p-4 shadow-[var(--card-shadow)]"
+                  to={`/category/${category.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group block rounded-xl border border-border bg-card p-4 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)]"
                 >
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-accent/15 text-accent-foreground">
                       <Folder className="h-3.5 w-3.5" />
                     </span>
                     <div>
-                      <p className="font-medium text-foreground">{category.name}</p>
+                      <p className="font-medium text-foreground group-hover:text-primary transition-colors">
+                        {category.name}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         {category.description || "No description provided yet."}
                       </p>
                     </div>
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
         )}
 
+        {results.length > 0 && (
+          <h2 className="font-display text-lg font-semibold text-foreground mb-3">Articles</h2>
+        )}
         <div className="space-y-3">
           {results.map((article, i) => (
             <Link
@@ -152,13 +172,13 @@ const SearchPage = () => {
           ))}
         </div>
 
-        {initialQuery && results.length === 0 && (
+        {effectiveQuery && !categoryLoading && categoryResults.length === 0 && results.length === 0 && (
           <div className="rounded-xl border border-border bg-muted/50 p-10 text-center">
-            <p className="text-muted-foreground">No articles found. Try a different search term.</p>
+            <p className="text-muted-foreground">No results found. Try a different search term.</p>
           </div>
         )}
 
-        {!initialQuery && (
+        {!effectiveQuery && (
           <div className="rounded-xl border border-border bg-muted/50 p-10 text-center">
             <Search className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
             <p className="text-muted-foreground">Enter a search term to find articles.</p>
