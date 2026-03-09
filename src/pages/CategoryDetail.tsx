@@ -14,6 +14,7 @@ import Layout from "@/components/Layout";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import RichTextEditor from "@/components/RichTextEditor";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -28,7 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
+import { richTextHasContent, sanitizeRichText, toStoredRichText } from "@/lib/richText";
 import { FloatingNav } from "@/components/ui/floating-navbar";
 
 type CategoryDetailRecord = {
@@ -51,6 +52,17 @@ const SECTIONS = [
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]["key"];
+type SectionDraft = Record<SectionKey, string>;
+
+const createSectionDraft = (
+  source?: Partial<Record<SectionKey, string | null | undefined>>,
+): SectionDraft => ({
+  diagnosis: sanitizeRichText(source?.diagnosis),
+  treatment: sanitizeRichText(source?.treatment),
+  improvement: sanitizeRichText(source?.improvement),
+  reassessment: sanitizeRichText(source?.reassessment),
+  trial: sanitizeRichText(source?.trial),
+});
 
 const CategoryDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -70,13 +82,7 @@ const CategoryDetail = () => {
   const [metaName, setMetaName] = useState("");
   const [metaDescription, setMetaDescription] = useState("");
   const [savingMeta, setSavingMeta] = useState(false);
-  const [draft, setDraft] = useState<Record<SectionKey, string>>({
-    diagnosis: "",
-    treatment: "",
-    improvement: "",
-    reassessment: "",
-    trial: "",
-  });
+  const [draft, setDraft] = useState<SectionDraft>(createSectionDraft());
 
   useEffect(() => {
     let isMounted = true;
@@ -103,13 +109,7 @@ const CategoryDetail = () => {
       }
 
       setCategory(data);
-      setDraft({
-        diagnosis: data.diagnosis ?? "",
-        treatment: data.treatment ?? "",
-        improvement: data.improvement ?? "",
-        reassessment: data.reassessment ?? "",
-        trial: data.trial ?? "",
-      });
+      setDraft(createSectionDraft(data));
       setMetaName(data.name ?? "");
       setMetaDescription(data.description ?? "");
       setLoading(false);
@@ -131,31 +131,28 @@ const CategoryDetail = () => {
     setActiveTab(key);
   };
 
+  const activeContent = useMemo(() => sanitizeRichText(draft[activeTab]), [activeTab, draft]);
+  const activeContentHasValue = useMemo(() => richTextHasContent(activeContent), [activeContent]);
+
   const handleCancel = () => {
     if (!category) return;
-    setDraft({
-      diagnosis: category.diagnosis ?? "",
-      treatment: category.treatment ?? "",
-      improvement: category.improvement ?? "",
-      reassessment: category.reassessment ?? "",
-      trial: category.trial ?? "",
-    });
+    setDraft(createSectionDraft(category));
     setEditing(false);
   };
 
   const handleSave = async () => {
     if (!category) return;
+    const nextDraft = createSectionDraft(draft);
+    const payload = {
+      diagnosis: toStoredRichText(nextDraft.diagnosis),
+      treatment: toStoredRichText(nextDraft.treatment),
+      improvement: toStoredRichText(nextDraft.improvement),
+      reassessment: toStoredRichText(nextDraft.reassessment),
+      trial: toStoredRichText(nextDraft.trial),
+    };
+
     setSaving(true);
-    const { error } = await supabase
-      .from("categories")
-      .update({
-        diagnosis: draft.diagnosis.trim() || null,
-        treatment: draft.treatment.trim() || null,
-        improvement: draft.improvement.trim() || null,
-        reassessment: draft.reassessment.trim() || null,
-        trial: draft.trial.trim() || null,
-      })
-      .eq("id", category.id);
+    const { error } = await supabase.from("categories").update(payload).eq("id", category.id);
     setSaving(false);
 
     if (error) {
@@ -164,13 +161,10 @@ const CategoryDetail = () => {
     }
 
     toast.success("Category updated.");
+    setDraft(nextDraft);
     setCategory({
       ...category,
-      diagnosis: draft.diagnosis.trim() || null,
-      treatment: draft.treatment.trim() || null,
-      improvement: draft.improvement.trim() || null,
-      reassessment: draft.reassessment.trim() || null,
-      trial: draft.trial.trim() || null,
+      ...payload,
     });
     setEditing(false);
   };
@@ -476,17 +470,25 @@ const CategoryDetail = () => {
             </h2>
             <div className="mt-3">
               {editing ? (
-                <Textarea
+                <RichTextEditor
+                  key={activeTab}
                   value={draft[activeTab]}
-                  onChange={(event) => setDraft((prev) => ({ ...prev, [activeTab]: event.target.value }))}
+                  onChange={(value) => setDraft((prev) => ({ ...prev, [activeTab]: value }))}
                   placeholder={`Add ${activeTab} notes...`}
-                  rows={8}
-                  className="text-base"
                 />
               ) : (
-                <p className="text-[15px] leading-relaxed text-muted-foreground whitespace-pre-wrap sm:text-base">
-                  {draft[activeTab] || "No information yet."}
-                </p>
+                <>
+                  {activeContentHasValue ? (
+                    <div
+                      className="rich-text-content text-[15px] leading-relaxed text-muted-foreground sm:text-base"
+                      dangerouslySetInnerHTML={{ __html: activeContent }}
+                    />
+                  ) : (
+                    <p className="text-[15px] leading-relaxed text-muted-foreground sm:text-base">
+                      No information yet.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </section>
