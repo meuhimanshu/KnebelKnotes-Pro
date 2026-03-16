@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ChevronRight,
   ClipboardList,
@@ -38,12 +38,13 @@ type CategoryDetailRecord = {
   description: string | null;
   diagnosis: string | null;
   treatment: string | null;
+  patient_education: string | null;
   improvement: string | null;
   reassessment: string | null;
   trial: string | null;
 };
 
-const ALL_SECTION_KEYS = ["diagnosis", "treatment", "improvement", "reassessment", "trial"] as const;
+const ALL_SECTION_KEYS = ["diagnosis", "treatment", "patient_education", "improvement", "reassessment", "trial"] as const;
 
 const VISIBLE_SECTIONS = [
   { key: "diagnosis", label: "Diagnosis", icon: ClipboardList },
@@ -60,13 +61,20 @@ const createSectionDraft = (
 ): SectionDraft => ({
   diagnosis: sanitizeRichText(source?.diagnosis),
   treatment: sanitizeRichText(source?.treatment),
+  patient_education: sanitizeRichText(source?.patient_education),
   improvement: sanitizeRichText(source?.improvement),
   reassessment: sanitizeRichText(source?.reassessment),
   trial: sanitizeRichText(source?.trial),
 });
 
+const getSectionFromHash = (hash: string): SectionKey | null => {
+  const normalized = hash.replace("#", "");
+  return VISIBLE_SECTIONS.some((section) => section.key === normalized) ? (normalized as SectionKey) : null;
+};
+
 const CategoryDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { profile, loading: authLoading } = useAuth();
   const [category, setCategory] = useState<CategoryDetailRecord | null>(null);
@@ -75,10 +83,15 @@ const CategoryDetail = () => {
   const [activeTab, setActiveTab] = useState<SectionKey>("diagnosis");
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingTreatmentNotes, setEditingTreatmentNotes] = useState(false);
+  const [editingPatientEducation, setEditingPatientEducation] = useState(false);
+  const [savingTreatmentSection, setSavingTreatmentSection] = useState<"treatment" | "patient_education" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const deleteTimerRef = useRef<number | null>(null);
+  const deleteCountdownIntervalRef = useRef<number | null>(null);
+  const deleteToastIdRef = useRef<string | number | null>(null);
   const [editingMeta, setEditingMeta] = useState(false);
   const [metaName, setMetaName] = useState("");
   const [metaDescription, setMetaDescription] = useState("");
@@ -92,7 +105,7 @@ const CategoryDetail = () => {
       if (!id) return;
       const { data, error } = await supabase
         .from("categories")
-        .select("id, short_code, name, description, diagnosis, treatment, improvement, reassessment, trial")
+        .select("id, short_code, name, description, diagnosis, treatment, patient_education, improvement, reassessment, trial")
         .eq("id", id)
         .maybeSingle();
 
@@ -139,6 +152,14 @@ const CategoryDetail = () => {
   const activeContent = useMemo(() => sanitizeRichText(draft[activeTab]), [activeTab, draft]);
   const activeContentHasValue = useMemo(() => richTextHasContent(activeContent), [activeContent]);
 
+  useEffect(() => {
+    const nextSection = getSectionFromHash(location.hash);
+
+    if (nextSection) {
+      setActiveTab(nextSection);
+    }
+  }, [location.hash]);
+
   const handleCancel = () => {
     if (!category) return;
     setDraft(createSectionDraft(category));
@@ -151,6 +172,7 @@ const CategoryDetail = () => {
     const payload = {
       diagnosis: toStoredRichText(nextDraft.diagnosis),
       treatment: toStoredRichText(nextDraft.treatment),
+      patient_education: toStoredRichText(nextDraft.patient_education),
       improvement: toStoredRichText(nextDraft.improvement),
       reassessment: toStoredRichText(nextDraft.reassessment),
       trial: toStoredRichText(nextDraft.trial),
@@ -172,6 +194,54 @@ const CategoryDetail = () => {
       ...payload,
     });
     setEditing(false);
+  };
+
+  const handleTreatmentSectionCancel = (field: "treatment" | "patient_education") => {
+    if (!category) return;
+
+    setDraft((prev) => ({
+      ...prev,
+      [field]: sanitizeRichText(category[field]),
+    }));
+
+    if (field === "treatment") {
+      setEditingTreatmentNotes(false);
+      return;
+    }
+
+    setEditingPatientEducation(false);
+  };
+
+  const handleTreatmentSectionSave = async (field: "treatment" | "patient_education") => {
+    if (!category) return;
+
+    const normalizedValue = sanitizeRichText(draft[field]);
+    const payload = {
+      [field]: toStoredRichText(normalizedValue),
+    };
+
+    setSavingTreatmentSection(field);
+    const { error } = await supabase.from("categories").update(payload).eq("id", category.id);
+    setSavingTreatmentSection(null);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    toast.success("Category updated.");
+    setDraft((prev) => ({
+      ...prev,
+      [field]: normalizedValue,
+    }));
+    setCategory((prev) => (prev ? { ...prev, ...payload } : prev));
+
+    if (field === "treatment") {
+      setEditingTreatmentNotes(false);
+      return;
+    }
+
+    setEditingPatientEducation(false);
   };
 
   const handleMetaSave = async () => {
@@ -231,27 +301,86 @@ const CategoryDetail = () => {
     navigate("/categories", { replace: true });
   };
 
-  const cancelDelete = () => {
+  const clearDeleteCountdown = () => {
     if (deleteTimerRef.current) {
       window.clearTimeout(deleteTimerRef.current);
       deleteTimerRef.current = null;
     }
+
+    if (deleteCountdownIntervalRef.current) {
+      window.clearInterval(deleteCountdownIntervalRef.current);
+      deleteCountdownIntervalRef.current = null;
+    }
+  };
+
+  const dismissDeleteToast = () => {
+    if (deleteToastIdRef.current !== null) {
+      toast.dismiss(deleteToastIdRef.current);
+      deleteToastIdRef.current = null;
+    }
+  };
+
+  const showDeleteToast = (secondsRemaining: number) => {
+    deleteToastIdRef.current = toast(
+      `Category will be deleted in ${secondsRemaining} second${secondsRemaining === 1 ? "" : "s"}.`,
+      {
+        id: deleteToastIdRef.current ?? undefined,
+        duration: Number.POSITIVE_INFINITY,
+        dismissible: false,
+        style: {
+          backgroundColor: "hsl(var(--destructive))",
+          color: "hsl(var(--destructive-foreground))",
+          border: "1px solid hsl(var(--destructive))",
+        },
+        action: {
+          label: "Undo",
+          onClick: cancelDelete,
+        },
+        actionButtonStyle: {
+          backgroundColor: "#ffffff",
+          color: "hsl(var(--destructive))",
+          border: "1px solid #ffffff",
+          fontWeight: 700,
+        },
+      },
+    );
+  };
+
+  const cancelDelete = () => {
+    clearDeleteCountdown();
+    dismissDeleteToast();
     setPendingDelete(false);
     toast.message("Deletion canceled.");
   };
 
   const scheduleDelete = () => {
     if (!category || pendingDelete) return;
+
+    clearDeleteCountdown();
+    dismissDeleteToast();
     setDeleteDialogOpen(false);
     setPendingDelete(true);
-    toast("Category will be deleted in 5 seconds.", {
-      duration: 5000,
-      action: {
-        label: "Undo",
-        onClick: cancelDelete,
-      },
-    });
+
+    let secondsRemaining = 5;
+    showDeleteToast(secondsRemaining);
+
+    deleteCountdownIntervalRef.current = window.setInterval(() => {
+      secondsRemaining -= 1;
+
+      if (secondsRemaining > 0) {
+        showDeleteToast(secondsRemaining);
+        return;
+      }
+
+      if (deleteCountdownIntervalRef.current) {
+        window.clearInterval(deleteCountdownIntervalRef.current);
+        deleteCountdownIntervalRef.current = null;
+      }
+    }, 1000);
+
     deleteTimerRef.current = window.setTimeout(() => {
+      clearDeleteCountdown();
+      dismissDeleteToast();
       setPendingDelete(false);
       void executeDelete();
     }, 5000);
@@ -259,9 +388,8 @@ const CategoryDetail = () => {
 
   useEffect(() => {
     return () => {
-      if (deleteTimerRef.current) {
-        window.clearTimeout(deleteTimerRef.current);
-      }
+      clearDeleteCountdown();
+      dismissDeleteToast();
     };
   }, []);
 
@@ -433,28 +561,6 @@ const CategoryDetail = () => {
           onNavigate={(link) => handleJump(link.replace("#", "") as SectionKey)}
         />
 
-        <div className="container mt-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
-          {canEdit && (
-            <>
-              {editing ? (
-                <>
-                  <Button type="button" variant="secondary" size="sm" onClick={handleCancel} className="w-full sm:w-auto">
-                    Cancel
-                  </Button>
-                  <Button type="button" size="sm" onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
-                    {saving ? "Saving..." : "Save"}
-                  </Button>
-                </>
-              ) : (
-                <Button type="button" size="sm" onClick={() => setEditing(true)} className="w-full gap-2 sm:w-auto">
-                  <PenLine className="h-3.5 w-3.5" />
-                  Edit
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-
         {error && (
           <div className="container mt-6">
             <div className="rounded-2xl border border-border/70 bg-destructive/10 p-4 text-sm text-destructive">
@@ -464,33 +570,74 @@ const CategoryDetail = () => {
         )}
 
         <div className="container py-5">
-          <section className="rounded-2xl border border-border/70 bg-card/70 p-4 shadow-[var(--card-shadow)] sm:p-6">
-            <h2 className="font-display text-xl font-semibold text-foreground">{activeSection.label}</h2>
-            <div className="mt-3">
+          <section
+            className={
+              activeTab === "treatment"
+                ? ""
+                : "rounded-2xl border border-border/70 bg-card/70 p-4 shadow-[var(--card-shadow)] sm:p-6"
+            }
+          >
+            {activeTab !== "treatment" && (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <h2 className="font-display text-xl font-semibold text-foreground">{activeSection.label}</h2>
+                {canEdit &&
+                  (editing ? (
+                    <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleCancel}
+                        className="w-full sm:w-auto"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="w-full sm:w-auto"
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => setEditing(true)}
+                      className="w-full gap-2 sm:w-auto"
+                    >
+                      <PenLine className="h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                  ))}
+              </div>
+            )}
+            <div className={activeTab === "treatment" ? "" : "mt-3"}>
               {activeTab === "treatment" ? (
-                <div className="space-y-6">
-                  <div>
-                    {editing ? (
-                      <RichTextEditor
-                        key={activeTab}
-                        value={draft[activeTab]}
-                        onChange={(value) => setDraft((prev) => ({ ...prev, [activeTab]: value }))}
-                        placeholder={`Add ${activeSection.label.toLowerCase()} notes...`}
-                      />
-                    ) : activeContentHasValue ? (
-                      <div
-                        className="rich-text-content text-[15px] leading-relaxed text-muted-foreground sm:text-base"
-                        dangerouslySetInnerHTML={{ __html: activeContent }}
-                      />
-                    ) : (
-                      <p className="text-[15px] leading-relaxed text-muted-foreground sm:text-base">
-                        No initiation notes yet.
-                      </p>
-                    )}
-                  </div>
-
-                  <InitiationOfTreatment categoryId={category.id} categoryName={category.name} />
-                </div>
+                <InitiationOfTreatment
+                  categoryId={category.id}
+                  categoryName={category.name}
+                  factorsContent={draft.treatment}
+                  patientEducationContent={draft.patient_education}
+                  canEditContent={canEdit}
+                  isEditingFactors={editingTreatmentNotes}
+                  isSavingFactors={savingTreatmentSection === "treatment"}
+                  onStartEditingFactors={() => setEditingTreatmentNotes(true)}
+                  onCancelEditingFactors={() => handleTreatmentSectionCancel("treatment")}
+                  onSaveFactors={() => void handleTreatmentSectionSave("treatment")}
+                  isEditingPatientEducation={editingPatientEducation}
+                  isSavingPatientEducation={savingTreatmentSection === "patient_education"}
+                  onStartEditingPatientEducation={() => setEditingPatientEducation(true)}
+                  onCancelEditingPatientEducation={() => handleTreatmentSectionCancel("patient_education")}
+                  onSavePatientEducation={() => void handleTreatmentSectionSave("patient_education")}
+                  onFactorsContentChange={(value) => setDraft((prev) => ({ ...prev, treatment: value }))}
+                  onPatientEducationContentChange={(value) =>
+                    setDraft((prev) => ({ ...prev, patient_education: value }))
+                  }
+                />
               ) : editing ? (
                 <RichTextEditor
                   key={activeTab}

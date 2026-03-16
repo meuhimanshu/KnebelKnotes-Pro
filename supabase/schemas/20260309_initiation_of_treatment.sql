@@ -125,6 +125,13 @@ for select
 to authenticated
 using (true);
 
+drop policy if exists "anon can read antidepressant master" on public.antidepressant_master;
+create policy "anon can read antidepressant master"
+on public.antidepressant_master
+for select
+to anon
+using (true);
+
 drop policy if exists "authenticated can read audit log" on public.edit_audit_log;
 create policy "authenticated can read audit log"
 on public.edit_audit_log
@@ -149,6 +156,81 @@ for update
 to authenticated
 using (public.is_treatment_admin())
 with check (public.is_treatment_admin());
+
+create or replace function public.get_category_treatment_rows(
+  p_category_id uuid
+)
+returns table (
+  id uuid,
+  category_id uuid,
+  drug_name text,
+  medication_type text,
+  frequency text,
+  line_of_treatment integer,
+  initiation_dose_mg integer,
+  therapeutic_min_dose_mg integer,
+  therapeutic_max_dose_mg integer,
+  max_dose_mg integer,
+  updated_at timestamptz,
+  is_active boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    master.id,
+    master.category_id,
+    master.drug_name,
+    master.medication_type,
+    master.frequency,
+    master.line_of_treatment,
+    master.initiation_dose_mg,
+    master.therapeutic_min_dose_mg,
+    master.therapeutic_max_dose_mg,
+    master.max_dose_mg,
+    master.updated_at,
+    master.is_active
+  from public.antidepressant_master as master
+  where master.category_id = p_category_id
+    and master.is_active = true
+  order by master.line_of_treatment asc, master.drug_name asc;
+$$;
+
+grant execute on function public.get_category_treatment_rows(uuid) to anon;
+grant execute on function public.get_category_treatment_rows(uuid) to authenticated;
+
+create or replace function public.search_treatment_medications(
+  p_query text
+)
+returns table (
+  drug_name text,
+  category_id uuid,
+  category_name text,
+  category_short_code text,
+  line_numbers integer[]
+)
+language sql
+security definer
+set search_path = public
+as $$
+  select
+    master.drug_name,
+    category.id as category_id,
+    category.name as category_name,
+    category.short_code as category_short_code,
+    array_agg(distinct master.line_of_treatment order by master.line_of_treatment) as line_numbers
+  from public.antidepressant_master as master
+  join public.categories as category on category.id = master.category_id
+  where master.is_active = true
+    and trim(coalesce(p_query, '')) <> ''
+    and master.drug_name ilike '%' || trim(p_query) || '%'
+  group by master.drug_name, category.id, category.name, category.short_code
+  order by lower(master.drug_name), category.name;
+$$;
+
+grant execute on function public.search_treatment_medications(text) to anon;
+grant execute on function public.search_treatment_medications(text) to authenticated;
 
 drop function if exists public.create_antidepressant_with_audit(uuid, text, integer, integer, integer, integer, integer, text);
 drop function if exists public.update_antidepressant_with_audit(uuid, text, integer, text, text, text, text);

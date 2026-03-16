@@ -1,10 +1,15 @@
-import { useSearchParams, Link } from "react-router-dom";
-import { Search, Clock, Tag, Folder } from "lucide-react";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
+import { Search, Clock, Tag, Folder, Pill } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import { searchArticles, type Article } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  formatTreatmentLines,
+  searchTreatmentMedications,
+  type MedicationSearchResult,
+} from "@/lib/treatmentSearch";
 
 type CategoryResult = {
   id: string;
@@ -15,11 +20,15 @@ type CategoryResult = {
 
 const SearchPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const paramQuery = searchParams.get("q") || "";
   const [query, setQuery] = useState(paramQuery);
   const [categoryResults, setCategoryResults] = useState<CategoryResult[]>([]);
+  const [medicationResults, setMedicationResults] = useState<MedicationSearchResult[]>([]);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [medicationError, setMedicationError] = useState<string | null>(null);
   const [categoryLoading, setCategoryLoading] = useState(false);
+  const [medicationLoading, setMedicationLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
 
@@ -30,22 +39,35 @@ const SearchPage = () => {
   }, [paramQuery]);
 
   const results = useMemo(() => (effectiveQuery ? searchArticles(effectiveQuery) : []), [effectiveQuery]);
+  const totalResults = medicationResults.length + categoryResults.length + results.length;
   const suggestions = useMemo(() => {
     if (!effectiveQuery) return [];
+    const medicationSuggestions = medicationResults.map((result) => ({
+      type: "medication" as const,
+      label: result.drug_name,
+      id: `${result.category_id}-${result.drug_name}`,
+      detail: `${result.category_name} • ${formatTreatmentLines(result.line_numbers)}`,
+      meta: result.category_short_code,
+      route: `/category/${result.category_id}#treatment`,
+    }));
     const categorySuggestions = categoryResults.map((category) => ({
       type: "category" as const,
       label: category.name,
       id: category.id,
+      detail: null,
       meta: category.short_code,
+      route: null,
     }));
     const articleSuggestions = (results as Article[]).map((article) => ({
       type: "article" as const,
       label: article.title,
       id: article.id,
+      detail: null,
       meta: null,
+      route: null,
     }));
-    return [...categorySuggestions, ...articleSuggestions].slice(0, 6);
-  }, [effectiveQuery, categoryResults, results]);
+    return [...medicationSuggestions, ...categorySuggestions, ...articleSuggestions].slice(0, 8);
+  }, [effectiveQuery, medicationResults, categoryResults, results]);
 
   useEffect(() => {
     let isMounted = true;
@@ -54,30 +76,39 @@ const SearchPage = () => {
     const fetchCategories = async () => {
       if (!searchTerm) {
         setCategoryResults([]);
+        setMedicationResults([]);
         setCategoryError(null);
+        setMedicationError(null);
         setCategoryLoading(false);
+        setMedicationLoading(false);
         return;
       }
 
       setCategoryLoading(true);
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id, short_code, name, description")
-        .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,short_code.ilike.%${searchTerm}%`)
-        .order("name", { ascending: true })
-        .limit(10);
+      setMedicationLoading(true);
+      const [{ data, error }, medicationSearch] = await Promise.all([
+        supabase
+          .from("categories")
+          .select("id, short_code, name, description")
+          .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,short_code.ilike.%${searchTerm}%`)
+          .order("name", { ascending: true })
+          .limit(10),
+        searchTreatmentMedications(searchTerm),
+      ]);
 
       if (!isMounted) return;
       if (error) {
         setCategoryError(error.message);
         setCategoryResults([]);
-        setCategoryLoading(false);
-        return;
+      } else {
+        setCategoryResults(data ?? []);
+        setCategoryError(null);
       }
 
-      setCategoryResults(data ?? []);
-      setCategoryError(null);
       setCategoryLoading(false);
+      setMedicationResults(medicationSearch.data);
+      setMedicationError(medicationSearch.error);
+      setMedicationLoading(false);
     };
 
     const debounce = window.setTimeout(() => {
@@ -98,9 +129,14 @@ const SearchPage = () => {
     setShowSuggestions(false);
   };
 
-  const handleSuggestionSelect = (value: string) => {
-    setQuery(value);
-    setSearchParams({ q: value });
+  const handleSuggestionSelect = (item: (typeof suggestions)[number]) => {
+    setQuery(item.label);
+    if (item.route) {
+      setShowSuggestions(false);
+      navigate(item.route);
+      return;
+    }
+    setSearchParams({ q: item.label });
     setShowSuggestions(false);
   };
 
@@ -121,7 +157,7 @@ const SearchPage = () => {
   return (
     <Layout>
       <div className="container max-w-3xl py-10 sm:py-12">
-        <h1 className="font-display text-2xl font-bold text-foreground mb-6 sm:text-3xl">Search Articles</h1>
+        <h1 className="font-display text-2xl font-bold text-foreground mb-6 sm:text-3xl">Search</h1>
 
         <form onSubmit={handleSearch} className="mb-8 flex flex-col gap-2 sm:flex-row">
           <div className="relative flex flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3">
@@ -148,13 +184,24 @@ const SearchPage = () => {
                     <button
                       key={`${item.type}-${item.id}`}
                       type="button"
-                      onClick={() => handleSuggestionSelect(item.label)}
+                      onClick={() => handleSuggestionSelect(item)}
                       className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
                     >
                       <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 text-accent-foreground">
-                        {item.type === "category" ? <Folder className="h-3.5 w-3.5" /> : <Search className="h-3.5 w-3.5" />}
+                        {item.type === "medication" ? (
+                          <Pill className="h-3.5 w-3.5" />
+                        ) : item.type === "category" ? (
+                          <Folder className="h-3.5 w-3.5" />
+                        ) : (
+                          <Search className="h-3.5 w-3.5" />
+                        )}
                       </span>
-                      <span className="flex-1 truncate">{item.label}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{item.label}</span>
+                        {item.detail && (
+                          <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
+                        )}
+                      </span>
                       {item.meta && (
                         <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                           {item.meta}
@@ -172,14 +219,55 @@ const SearchPage = () => {
 
         {effectiveQuery && (
           <p className="mb-6 text-sm text-muted-foreground">
-            {results.length} result{results.length !== 1 ? "s" : ""} for "
+            {totalResults} result{totalResults !== 1 ? "s" : ""} for "
             <span className="font-medium text-foreground">{effectiveQuery}</span>"
           </p>
+        )}
+
+        {medicationError && (
+          <div className="mb-6 rounded-2xl border border-border/70 bg-destructive/10 p-4 text-sm text-destructive">
+            {medicationError}
+          </div>
         )}
 
         {categoryError && (
           <div className="mb-6 rounded-2xl border border-border/70 bg-destructive/10 p-4 text-sm text-destructive">
             {categoryError}
+          </div>
+        )}
+
+        {medicationResults.length > 0 && (
+          <div className="mb-8">
+            <h2 className="font-display text-lg font-semibold text-foreground mb-3">Medications</h2>
+            <div className="space-y-3">
+              {medicationResults.map((result) => (
+                <Link
+                  key={`${result.category_id}-${result.drug_name}`}
+                  to={`/category/${result.category_id}#treatment`}
+                  className="group block rounded-2xl border border-border/70 bg-card/90 p-4 shadow-[var(--card-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--card-shadow-hover)]"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-accent/15 text-accent-foreground">
+                      <Pill className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-foreground group-hover:text-primary transition-colors">
+                          {result.drug_name}
+                        </p>
+                        <span className="inline-flex rounded-full border border-border/70 bg-muted/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                          {result.category_short_code}
+                        </span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Used in <span className="font-medium text-foreground">{result.category_name}</span> under{" "}
+                        {formatTreatmentLines(result.line_numbers)} in Initiation of Treatment.
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
 
@@ -246,7 +334,7 @@ const SearchPage = () => {
           ))}
         </div>
 
-        {effectiveQuery && !categoryLoading && categoryResults.length === 0 && results.length === 0 && (
+        {effectiveQuery && !categoryLoading && !medicationLoading && medicationResults.length === 0 && categoryResults.length === 0 && results.length === 0 && (
           <div className="rounded-2xl border border-border/70 bg-card/70 p-6 text-center sm:p-10">
             <p className="text-muted-foreground">No results found. Try a different search term.</p>
           </div>
@@ -255,7 +343,7 @@ const SearchPage = () => {
         {!effectiveQuery && (
           <div className="rounded-2xl border border-border/70 bg-card/70 p-6 text-center sm:p-10">
             <Search className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">Enter a search term to find articles.</p>
+            <p className="text-muted-foreground">Enter a search term to find medications, categories, or articles.</p>
           </div>
         )}
       </div>

@@ -1,11 +1,16 @@
 import { useNavigate } from "react-router-dom";
-import { Search, BookOpen, Stethoscope, FlaskConical, Folder } from "lucide-react";
+import { Search, BookOpen, Stethoscope, FlaskConical, Folder, Pill } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import { searchArticles, type Article } from "@/data/mockData";
 import { Button } from "@/components/ui/button";
 import heroBg from "@/assets/hero-bg.jpg";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  formatTreatmentLines,
+  searchTreatmentMedications,
+  type MedicationSearchResult,
+} from "@/lib/treatmentSearch";
 
 type CategoryResult = {
   id: string;
@@ -17,6 +22,7 @@ type CategoryResult = {
 const Index = () => {
   const [query, setQuery] = useState("");
   const [categoryResults, setCategoryResults] = useState<CategoryResult[]>([]);
+  const [medicationResults, setMedicationResults] = useState<MedicationSearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const blurTimeoutRef = useRef<number | null>(null);
   const navigate = useNavigate();
@@ -25,20 +31,32 @@ const Index = () => {
   const articleResults = useMemo(() => (effectiveQuery ? searchArticles(effectiveQuery) : []), [effectiveQuery]);
   const suggestions = useMemo(() => {
     if (!effectiveQuery) return [];
+    const medicationSuggestions = medicationResults.map((result) => ({
+      type: "medication" as const,
+      label: result.drug_name,
+      id: `${result.category_id}-${result.drug_name}`,
+      detail: `${result.category_name} • ${formatTreatmentLines(result.line_numbers)}`,
+      meta: result.category_short_code,
+      route: `/category/${result.category_id}#treatment`,
+    }));
     const categorySuggestions = categoryResults.map((category) => ({
       type: "category" as const,
       label: category.name,
       id: category.id,
+      detail: null,
       meta: category.short_code,
+      route: null,
     }));
     const articleSuggestions = (articleResults as Article[]).map((article) => ({
       type: "article" as const,
       label: article.title,
       id: article.id,
+      detail: null,
       meta: null,
+      route: null,
     }));
-    return [...categorySuggestions, ...articleSuggestions].slice(0, 6);
-  }, [effectiveQuery, categoryResults, articleResults]);
+    return [...medicationSuggestions, ...categorySuggestions, ...articleSuggestions].slice(0, 6);
+  }, [effectiveQuery, medicationResults, categoryResults, articleResults]);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,23 +65,28 @@ const Index = () => {
     const fetchCategories = async () => {
       if (!searchTerm) {
         setCategoryResults([]);
+        setMedicationResults([]);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("categories")
-        .select("id, short_code, name, description")
-        .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,short_code.ilike.%${searchTerm}%`)
-        .order("name", { ascending: true })
-        .limit(8);
+      const [{ data, error }, medicationSearch] = await Promise.all([
+        supabase
+          .from("categories")
+          .select("id, short_code, name, description")
+          .or(`name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,short_code.ilike.%${searchTerm}%`)
+          .order("name", { ascending: true })
+          .limit(8),
+        searchTreatmentMedications(searchTerm),
+      ]);
 
       if (!isMounted) return;
       if (error) {
         setCategoryResults([]);
-        return;
+      } else {
+        setCategoryResults(data ?? []);
       }
 
-      setCategoryResults(data ?? []);
+      setMedicationResults(medicationSearch.data.slice(0, 8));
     };
 
     const debounce = window.setTimeout(() => {
@@ -84,10 +107,14 @@ const Index = () => {
     setShowSuggestions(false);
   };
 
-  const handleSuggestionSelect = (value: string) => {
-    setQuery(value);
+  const handleSuggestionSelect = (item: (typeof suggestions)[number]) => {
+    setQuery(item.label);
     setShowSuggestions(false);
-    navigate(`/search?q=${encodeURIComponent(value)}`);
+    if (item.route) {
+      navigate(item.route);
+      return;
+    }
+    navigate(`/search?q=${encodeURIComponent(item.label)}`);
   };
 
   const handleFocus = () => {
@@ -149,17 +176,24 @@ const Index = () => {
                         <button
                           key={`${item.type}-${item.id}`}
                           type="button"
-                          onClick={() => handleSuggestionSelect(item.label)}
+                          onClick={() => handleSuggestionSelect(item)}
                           className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
                         >
                           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent/15 text-accent-foreground">
-                            {item.type === "category" ? (
+                            {item.type === "medication" ? (
+                              <Pill className="h-3.5 w-3.5" />
+                            ) : item.type === "category" ? (
                               <Folder className="h-3.5 w-3.5" />
                             ) : (
                               <Search className="h-3.5 w-3.5" />
                             )}
                           </span>
-                          <span className="flex-1 truncate">{item.label}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{item.label}</span>
+                            {item.detail && (
+                              <span className="block truncate text-xs text-muted-foreground">{item.detail}</span>
+                            )}
+                          </span>
                           {item.meta && (
                             <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                               {item.meta}

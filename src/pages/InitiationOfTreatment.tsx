@@ -3,9 +3,10 @@ import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { z } from "zod";
 import {
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   FileClock,
-  GitBranchPlus,
   Loader2,
   PencilLine,
   ShieldCheck,
@@ -13,12 +14,9 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  buildDoseOptionsMg,
-  buildProgressionRecommendation,
-  formatDoseMg,
-  formatDoseRangeMg,
-} from "@/lib/treatmentProgression";
+import RichTextEditor from "@/components/RichTextEditor";
+import { formatDoseMg, formatDoseRangeMg } from "@/lib/treatmentProgression";
+import { richTextHasContent } from "@/lib/richText";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -121,17 +119,6 @@ type EditFormState = {
 };
 
 type ReviewAction = "approve" | "reject";
-type ProgressionResponse = "none" | "partial" | "adequate";
-type ProgressionTolerability = "tolerating" | "mild_side_effects" | "intolerable";
-
-type ProgressionState = {
-  lineOfTreatment: string;
-  drugId: string;
-  currentDoseMg: string;
-  weeksAtDose: string;
-  response: ProgressionResponse | "";
-  tolerability: ProgressionTolerability | "";
-};
 
 const optionalDoseField = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) {
@@ -223,7 +210,7 @@ const AUDITED_FIELDS: Array<{ key: keyof AntidepressantSnapshot; label: string }
   { key: "max_dose_mg", label: "Maximum dose" },
 ];
 
-const PROGRESSION_WEEK_OPTIONS = [0, 1, 2, 4, 6, 8, 12];
+const TREATMENT_LINES = [1, 2, 3] as const;
 
 const emptyForm: EditFormState = {
   drug_name: "",
@@ -235,15 +222,6 @@ const emptyForm: EditFormState = {
   therapeutic_max_dose_mg: "",
   max_dose_mg: "",
   change_reason: "",
-};
-
-const emptyProgressionState: ProgressionState = {
-  lineOfTreatment: "",
-  drugId: "",
-  currentDoseMg: "",
-  weeksAtDose: "",
-  response: "",
-  tolerability: "",
 };
 
 const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
@@ -293,6 +271,7 @@ const normalizeTreatmentModuleError = (message: string) => {
       "public.antidepressant_master",
       "public.pending_antidepressant_edits",
       "public.edit_audit_log",
+      "public.get_category_treatment_rows",
       "public.create_antidepressant_with_audit",
       "public.update_antidepressant_with_audit",
       "public.submit_antidepressant_pending_edit",
@@ -352,25 +331,45 @@ const formatDoseCellValue = (value: number | null) => (value === null ? "Not set
 const formatDoseRangeCellValue = (min: number | null, max: number | null) =>
   min === null || max === null ? "Not set" : formatDoseRangeMg(min, max);
 
-const hasCompleteDoseConfiguration = (
-  row: AntidepressantMasterRow,
-): row is AntidepressantMasterRow & {
-  initiation_dose_mg: number;
-  therapeutic_min_dose_mg: number;
-  therapeutic_max_dose_mg: number;
-  max_dose_mg: number;
-} =>
-  row.initiation_dose_mg !== null &&
-  row.therapeutic_min_dose_mg !== null &&
-  row.therapeutic_max_dose_mg !== null &&
-  row.max_dose_mg !== null;
-
 type InitiationOfTreatmentProps = {
   categoryId: string;
   categoryName?: string;
+  factorsContent?: string;
+  patientEducationContent?: string;
+  canEditContent?: boolean;
+  isEditingFactors?: boolean;
+  isSavingFactors?: boolean;
+  onStartEditingFactors?: () => void;
+  onCancelEditingFactors?: () => void;
+  onSaveFactors?: () => void;
+  isEditingPatientEducation?: boolean;
+  isSavingPatientEducation?: boolean;
+  onStartEditingPatientEducation?: () => void;
+  onCancelEditingPatientEducation?: () => void;
+  onSavePatientEducation?: () => void;
+  onFactorsContentChange?: (value: string) => void;
+  onPatientEducationContentChange?: (value: string) => void;
 };
 
-const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatmentProps) => {
+const InitiationOfTreatment = ({
+  categoryId,
+  categoryName,
+  factorsContent = "",
+  patientEducationContent = "",
+  canEditContent = false,
+  isEditingFactors = false,
+  isSavingFactors = false,
+  onStartEditingFactors,
+  onCancelEditingFactors,
+  onSaveFactors,
+  isEditingPatientEducation = false,
+  isSavingPatientEducation = false,
+  onStartEditingPatientEducation,
+  onCancelEditingPatientEducation,
+  onSavePatientEducation,
+  onFactorsContentChange,
+  onPatientEducationContentChange,
+}: InitiationOfTreatmentProps) => {
   const { user, profile, loading: authLoading } = useAuth();
   const [rows, setRows] = useState<AntidepressantMasterRow[]>([]);
   const [loadingRows, setLoadingRows] = useState(true);
@@ -393,29 +392,30 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   const [reviewAction, setReviewAction] = useState<ReviewAction>("approve");
   const [reviewNote, setReviewNote] = useState("");
   const [reviewSaving, setReviewSaving] = useState(false);
-  const [progression, setProgression] = useState<ProgressionState>(emptyProgressionState);
+  const [selectedLine, setSelectedLine] = useState("");
+  const [selectedMedicationId, setSelectedMedicationId] = useState("");
+  const [isLineTableCollapsed, setIsLineTableCollapsed] = useState(false);
 
   const canApprove = profile?.role === "super_admin";
   const canPropose = profile?.role === "sub_admin";
+  const canEditRows = canApprove || canPropose;
+  const canViewHistory = Boolean(user);
+  const canViewUpdatedAt = Boolean(user);
   const canTrackPending = canApprove || canPropose;
+  const showActionColumn = canViewHistory || canEditRows;
 
   const loadRows = useCallback(async () => {
-    if (!user || !categoryId) {
+    if (!categoryId) {
       setRows([]);
+      setRowsError(null);
       setLoadingRows(false);
       return;
     }
 
     setLoadingRows(true);
-    const { data, error } = await supabase
-      .from("antidepressant_master")
-      .select(
-        "id, category_id, drug_name, medication_type, frequency, line_of_treatment, initiation_dose_mg, therapeutic_min_dose_mg, therapeutic_max_dose_mg, max_dose_mg, updated_at, is_active",
-      )
-      .eq("category_id", categoryId)
-      .eq("is_active", true)
-      .order("line_of_treatment", { ascending: true })
-      .order("drug_name", { ascending: true });
+    const { data, error } = await supabase.rpc("get_category_treatment_rows", {
+      p_category_id: categoryId,
+    });
 
     if (error) {
       setRowsError(normalizeTreatmentModuleError(error.message));
@@ -426,7 +426,7 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
     }
 
     setLoadingRows(false);
-  }, [categoryId, user]);
+  }, [categoryId]);
 
   const loadPendingRows = useCallback(async () => {
     if (!user || !canTrackPending || !categoryId) {
@@ -510,12 +510,8 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   }, [canApprove, canPropose, canTrackPending, categoryId, user]);
 
   useEffect(() => {
-    if (authLoading) {
-      return;
-    }
-
     void loadRows();
-  }, [authLoading, loadRows]);
+  }, [loadRows]);
 
   useEffect(() => {
     if (authLoading) {
@@ -526,56 +522,52 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   }, [authLoading, loadPendingRows]);
 
   const groupedRows = useMemo(() => {
-    return rows.reduce<Record<number, AntidepressantMasterRow[]>>((groups, row) => {
+    const groups = TREATMENT_LINES.reduce<Record<number, AntidepressantMasterRow[]>>((acc, line) => {
+      acc[line] = [];
+      return acc;
+    }, {});
+
+    rows.forEach((row) => {
       groups[row.line_of_treatment] ??= [];
       groups[row.line_of_treatment].push(row);
-      return groups;
-    }, {});
+    });
+
+    return groups;
   }, [rows]);
 
   const masterRowMap = useMemo(() => {
     return new Map(rows.map((row) => [row.id, row]));
   }, [rows]);
 
-  const progressionRows = useMemo(() => rows.filter(hasCompleteDoseConfiguration), [rows]);
-  const progressionRowsForSelectedLine = useMemo(() => {
-    if (!progression.lineOfTreatment) {
+  const selectedLineRows = useMemo(() => {
+    if (!selectedLine) {
       return [];
     }
 
-    return progressionRows.filter((row) => row.line_of_treatment === Number(progression.lineOfTreatment));
-  }, [progression.lineOfTreatment, progressionRows]);
+    return groupedRows[Number(selectedLine)] ?? [];
+  }, [groupedRows, selectedLine]);
 
-  const selectedProgressionDrug = useMemo(
-    () => progressionRowsForSelectedLine.find((row) => row.id === progression.drugId) ?? null,
-    [progression.drugId, progressionRowsForSelectedLine],
+  const selectedMedication = useMemo(
+    () => selectedLineRows.find((row) => row.id === selectedMedicationId) ?? null,
+    [selectedLineRows, selectedMedicationId],
+  );
+  const factorsContentHasValue = useMemo(() => richTextHasContent(factorsContent), [factorsContent]);
+  const patientEducationContentHasValue = useMemo(
+    () => richTextHasContent(patientEducationContent),
+    [patientEducationContent],
   );
 
-  const progressionDoseOptions = useMemo(
-    () => (selectedProgressionDrug ? buildDoseOptionsMg(selectedProgressionDrug) : []),
-    [selectedProgressionDrug],
-  );
-
-  const progressionRecommendation = useMemo(() => {
-    if (
-      !selectedProgressionDrug ||
-      !progression.currentDoseMg ||
-      !progression.weeksAtDose ||
-      !progression.response ||
-      !progression.tolerability
-    ) {
-      return null;
-    }
-
-    return buildProgressionRecommendation(selectedProgressionDrug, {
-      currentDoseMg: Number(progression.currentDoseMg),
-      weeksAtDose: Number(progression.weeksAtDose),
-      response: progression.response,
-      tolerability: progression.tolerability,
-    });
-  }, [progression, selectedProgressionDrug]);
+  const handleLineChange = (value: string) => {
+    setSelectedLine(value);
+    setSelectedMedicationId("");
+    setIsLineTableCollapsed(false);
+  };
 
   const openEditDialog = (row: AntidepressantMasterRow) => {
+    if (!canEditRows) {
+      return;
+    }
+
     setSelectedRow(row);
     setForm(toEditForm(row));
     setFormErrors({});
@@ -583,6 +575,10 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   };
 
   const openCreateDialog = () => {
+    if (!canApprove) {
+      return;
+    }
+
     setSelectedRow(null);
     setForm(emptyForm);
     setFormErrors({});
@@ -590,6 +586,10 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   };
 
   const openReviewDialog = (item: PendingEditRow, action: ReviewAction) => {
+    if (!canApprove) {
+      return;
+    }
+
     setReviewTarget(item);
     setReviewAction(action);
     setReviewNote("");
@@ -597,6 +597,11 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   };
 
   const loadHistory = async (row: AntidepressantMasterRow) => {
+    if (!user) {
+      toast.error("Sign in to view audit history.");
+      return;
+    }
+
     setHistoryTarget(row);
     setHistoryOpen(true);
     setHistoryLoading(true);
@@ -654,6 +659,11 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   };
 
   const handleSave = async () => {
+    if (!canEditRows) {
+      toast.error("Sign in with editor access to make treatment changes.");
+      return;
+    }
+
     if (!selectedRow && !canApprove) {
       return;
     }
@@ -724,7 +734,7 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
   };
 
   const handleReview = async () => {
-    if (!reviewTarget) {
+    if (!canApprove || !reviewTarget) {
       return;
     }
 
@@ -759,364 +769,498 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
     }
   };
 
-  if (authLoading || loadingRows) {
-    return <div className="text-sm text-muted-foreground">Loading treatment module...</div>;
-  }
+  const renderTreatmentTable = (lineRows: AntidepressantMasterRow[]) => {
+    if (lineRows.length === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-border/80 p-4 text-sm text-muted-foreground">
+          No medications are configured for this treatment line yet.
+        </div>
+      );
+    }
 
-  if (!user) {
     return (
-      <Card className="border-dashed border-border/80 bg-muted/15 shadow-none">
-        <CardHeader>
-          <CardTitle>Sign in required</CardTitle>
-          <CardDescription>
-            This treatment module is restricted to authenticated users because the master table and audit history are
-            protected by Supabase RLS.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild>
-            <Link to="/login">Go to login</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Drug</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Frequency</TableHead>
+              <TableHead>Initiation Dose</TableHead>
+              <TableHead>Therapeutic Range</TableHead>
+              <TableHead>Max Dose</TableHead>
+              {canViewUpdatedAt && <TableHead>Updated</TableHead>}
+              {showActionColumn && <TableHead className="text-right">Actions</TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lineRows.map((row) => (
+              <TableRow key={row.id}>
+                <TableCell className="font-medium text-foreground">{row.drug_name}</TableCell>
+                <TableCell>{formatMedicationType(row.medication_type)}</TableCell>
+                <TableCell>{row.frequency || "Not set"}</TableCell>
+                <TableCell>{formatDoseCellValue(row.initiation_dose_mg)}</TableCell>
+                <TableCell>{formatDoseRangeCellValue(row.therapeutic_min_dose_mg, row.therapeutic_max_dose_mg)}</TableCell>
+                <TableCell>{formatDoseCellValue(row.max_dose_mg)}</TableCell>
+                {canViewUpdatedAt && (
+                  <TableCell className="text-muted-foreground">{formatTimestamp(row.updated_at)}</TableCell>
+                )}
+                {showActionColumn && (
+                  <TableCell>
+                    <div className="flex justify-end gap-2">
+                      {canViewHistory && (
+                        <Button type="button" variant="outline" size="sm" onClick={() => void loadHistory(row)}>
+                          <FileClock className="mr-1.5 h-3.5 w-3.5" />
+                          History
+                        </Button>
+                      )}
+                      {canEditRows && (
+                        <Button type="button" size="sm" onClick={() => openEditDialog(row)}>
+                          <PencilLine className="mr-1.5 h-3.5 w-3.5" />
+                          {canApprove ? "Edit" : "Propose change"}
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     );
+  };
+
+  if (loadingRows) {
+    return <div className="text-sm text-muted-foreground">Loading treatment module...</div>;
   }
 
   return (
     <>
       <Card className="border-dashed border-border/80 bg-muted/10 shadow-none">
         <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            {categoryName && <Badge variant="secondary">{categoryName}</Badge>}
-            <Badge variant="outline" className="gap-1">
-              <ShieldCheck className="h-3 w-3" />
-              Audit tracked
-            </Badge>
-            <Badge variant="outline">
-              {canApprove ? "Approve + direct edit access" : canPropose ? "Proposal access" : "View-only access"}
-            </Badge>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {categoryName && <Badge variant="secondary">{categoryName}</Badge>}
+              <Badge variant="outline" className="gap-1">
+                <ShieldCheck className="h-3 w-3" />
+                Audit tracked
+              </Badge>
+            </div>
+            <CardTitle>Initiation of Treatment</CardTitle>
+            <CardDescription>
+              Select a line of treatment first, review the medications configured for that line, then choose a starting
+              dose and titration schedule for the medication you want to use.
+            </CardDescription>
           </div>
-          <CardTitle>Medication Progression</CardTitle>
-          <CardDescription>
-            Category-specific medication rows, pending approvals, and progression outputs live here inside Initiation of
-            Treatment. Dose fields stay integer-based when present, while medications without numeric guidance can still be
-            tracked for reference.
-          </CardDescription>
-        </div>
-        <div className="space-y-3 sm:max-w-sm">
-          <div className="rounded-xl border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-            Direct changes write to the audit log. Proposed changes stay in a pending queue until a super admin approves or
-            rejects them.
+          <div className="space-y-3 sm:max-w-sm">
+            <div className="rounded-xl border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              {authLoading
+                ? "Treatment changes are audit tracked."
+                : user
+                  ? "Direct changes write to the audit log. Proposed changes stay in a pending queue until a super admin approves or rejects them."
+                  : "Viewing is public. Sign in only if you need to add, propose, or approve treatment changes."}
+            </div>
+            {!authLoading && !user && (
+              <Button asChild variant="secondary" className="w-full sm:w-auto">
+                <Link to="/login">Log in to make changes</Link>
+              </Button>
+            )}
+            {canApprove && (
+              <Button type="button" className="w-full sm:w-auto" onClick={openCreateDialog}>
+                Add medication
+              </Button>
+            )}
           </div>
-          {canApprove && (
-            <Button type="button" className="w-full sm:w-auto" onClick={openCreateDialog}>
-              Add medication
-            </Button>
-          )}
-        </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="master" className="space-y-4">
-          <TabsList className="w-full justify-start sm:w-auto">
-            <TabsTrigger value="master">Master List</TabsTrigger>
-            {canTrackPending && <TabsTrigger value="workflow">{canApprove ? "Pending Approvals" : "My Proposals"}</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="master" className="space-y-4">
-            <Card className="border-dashed border-border/80 bg-muted/15 shadow-none">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <GitBranchPlus className="h-5 w-5" />
-                  Progression Guide
-                </CardTitle>
-                <CardDescription>
-                  Choose a medication with a complete numeric dose setup to reach a recommendation based on range, duration,
-                  response, and tolerability.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-                  <div className="space-y-2">
-                    <Label>Line of treatment</Label>
-                    <Select
-                      value={progression.lineOfTreatment}
-                      onValueChange={(value) =>
-                        setProgression({
-                          lineOfTreatment: value,
-                          drugId: "",
-                          currentDoseMg: "",
-                          weeksAtDose: "",
-                          response: "",
-                          tolerability: "",
-                        })
-                      }
-                      disabled={progressionRows.length === 0}
-                    >
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={progressionRows.length > 0 ? "Select line" : "No fully configured medication rows"}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Line 1</SelectItem>
-                        <SelectItem value="2">Line 2</SelectItem>
-                        <SelectItem value="3">Line 3</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Medication</Label>
-                    <Select
-                      value={progression.drugId}
-                      onValueChange={(value) =>
-                        setProgression({
-                          lineOfTreatment: progression.lineOfTreatment,
-                          drugId: value,
-                          currentDoseMg: "",
-                          weeksAtDose: "",
-                          response: "",
-                          tolerability: "",
-                        })
-                      }
-                      disabled={!progression.lineOfTreatment}
-                    >
-                      <SelectTrigger>
-                        <SelectValue
-                          placeholder={
-                            !progression.lineOfTreatment
-                              ? "Select line first"
-                              : progressionRowsForSelectedLine.length > 0
-                                ? "Select medication"
-                                : "No medications with numeric dosing in this line"
-                          }
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {progressionRowsForSelectedLine.map((row) => (
-                          <SelectItem key={row.id} value={row.id}>
-                            {row.drug_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Current dose</Label>
-                    <Select
-                      value={progression.currentDoseMg}
-                      onValueChange={(value) => setProgression((prev) => ({ ...prev, currentDoseMg: value }))}
-                      disabled={!selectedProgressionDrug}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select dose" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {progressionDoseOptions.map((dose) => (
-                          <SelectItem key={dose} value={String(dose)}>
-                            {formatDoseMg(dose)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Weeks at dose</Label>
-                    <Select
-                      value={progression.weeksAtDose}
-                      onValueChange={(value) => setProgression((prev) => ({ ...prev, weeksAtDose: value }))}
-                      disabled={!selectedProgressionDrug}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select weeks" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PROGRESSION_WEEK_OPTIONS.map((weeks) => (
-                          <SelectItem key={weeks} value={String(weeks)}>
-                            {weeks} week{weeks === 1 ? "" : "s"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Clinical response</Label>
-                    <Select
-                      value={progression.response}
-                      onValueChange={(value) =>
-                        setProgression((prev) => ({ ...prev, response: value as ProgressionResponse }))
-                      }
-                      disabled={!selectedProgressionDrug}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select response" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">No meaningful response</SelectItem>
-                        <SelectItem value="partial">Partial response</SelectItem>
-                        <SelectItem value="adequate">Adequate response</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Tolerability</Label>
-                    <Select
-                      value={progression.tolerability}
-                      onValueChange={(value) =>
-                        setProgression((prev) => ({ ...prev, tolerability: value as ProgressionTolerability }))
-                      }
-                      disabled={!selectedProgressionDrug}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tolerability" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="tolerating">Tolerating well</SelectItem>
-                        <SelectItem value="mild_side_effects">Mild side effects</SelectItem>
-                        <SelectItem value="intolerable">Intolerable side effects</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {selectedProgressionDrug && (
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <Badge variant="outline">Line {selectedProgressionDrug.line_of_treatment}</Badge>
-                    <Badge variant="outline">{formatMedicationType(selectedProgressionDrug.medication_type)}</Badge>
-                    {selectedProgressionDrug.frequency && <Badge variant="outline">{selectedProgressionDrug.frequency}</Badge>}
-                    <Badge variant="outline">Initiation {formatDoseMg(selectedProgressionDrug.initiation_dose_mg)}</Badge>
-                    <Badge variant="outline">
-                      Therapeutic{" "}
-                      {formatDoseRangeMg(
-                        selectedProgressionDrug.therapeutic_min_dose_mg,
-                        selectedProgressionDrug.therapeutic_max_dose_mg,
-                      )}
-                    </Badge>
-                    <Badge variant="outline">Max {formatDoseMg(selectedProgressionDrug.max_dose_mg)}</Badge>
-                  </div>
-                )}
-
-                <div className="rounded-2xl border border-border/80 bg-background/80 p-4">
-                  {progressionRecommendation ? (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-display text-lg font-semibold text-foreground">
-                          {progressionRecommendation.title}
-                        </p>
-                        <Badge variant="outline">{progressionRecommendation.band}</Badge>
-                        {progressionRecommendation.nextDoseMg !== null && (
-                          <Badge variant="secondary">
-                            Next dose target: {formatDoseMg(progressionRecommendation.nextDoseMg)}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-sm leading-relaxed text-muted-foreground">{progressionRecommendation.summary}</p>
-                      <div className="space-y-2">
-                        {progressionRecommendation.bullets.map((bullet) => (
-                          <p key={bullet} className="text-sm text-foreground">
-                            {bullet}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {!progression.lineOfTreatment
-                        ? "Select Line 1, 2, or 3 first. The medication dropdown will then narrow to that treatment line."
-                        : progressionRowsForSelectedLine.length > 0
-                          ? "Select a medication, dose, weeks, response, and tolerability to generate a progression output."
-                        : rows.length > 0
-                          ? "This line has no medications with a complete numeric dose setup yet."
-                          : "No medication rows exist for this category yet."}
-                    </p>
-                  )}
-                </div>
-
-                {rows.length > progressionRows.length && (
-                  <p className="text-sm text-muted-foreground">
-                    {rows.length - progressionRows.length} medication
-                    {rows.length - progressionRows.length === 1 ? "" : "s"} are excluded from the progression guide because
-                    one or more dose values are missing.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            {rowsError && (
-              <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-                {rowsError}
-              </div>
+          <Tabs defaultValue="steps" className="space-y-4">
+            {canTrackPending && (
+              <TabsList className="w-full justify-start sm:w-auto">
+                <TabsTrigger value="steps">Treatment Steps</TabsTrigger>
+                <TabsTrigger value="workflow">{canApprove ? "Pending Approvals" : "My Proposals"}</TabsTrigger>
+              </TabsList>
             )}
 
-            {!rowsError && rows.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
-                {canApprove
-                  ? "No medications are configured for this category yet. Use Add medication to create the first row."
-                  : "No medications are configured for this category yet."}
-              </div>
-            )}
-
-            {Object.entries(groupedRows).map(([line, lineRows]) => (
-              <div key={line} className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="font-display text-lg font-semibold text-foreground">Line {line} Treatment</h2>
-                  <span className="text-xs text-muted-foreground">{lineRows.length} medications</span>
+            <TabsContent value="steps" className="space-y-4">
+              {rowsError && (
+                <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+                  {rowsError}
                 </div>
+              )}
 
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Drug</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Frequency</TableHead>
-                        <TableHead>Initiation Dose</TableHead>
-                        <TableHead>Therapeutic Range</TableHead>
-                        <TableHead>Max Dose</TableHead>
-                        <TableHead>Updated</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {lineRows.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell className="font-medium text-foreground">{row.drug_name}</TableCell>
-                          <TableCell>{formatMedicationType(row.medication_type)}</TableCell>
-                          <TableCell>{row.frequency || "Not set"}</TableCell>
-                          <TableCell>{formatDoseCellValue(row.initiation_dose_mg)}</TableCell>
-                          <TableCell>{formatDoseRangeCellValue(row.therapeutic_min_dose_mg, row.therapeutic_max_dose_mg)}</TableCell>
-                          <TableCell>{formatDoseCellValue(row.max_dose_mg)}</TableCell>
-                          <TableCell className="text-muted-foreground">{formatTimestamp(row.updated_at)}</TableCell>
-                          <TableCell>
-                            <div className="flex justify-end gap-2">
-                              <Button type="button" variant="outline" size="sm" onClick={() => void loadHistory(row)}>
-                                <FileClock className="mr-1.5 h-3.5 w-3.5" />
-                                History
+              {!rowsError && rows.length === 0 && (
+                <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
+                  {canApprove
+                    ? "No medications are configured for this category yet. Use Add medication to create the first row."
+                    : "No medications are configured for this category yet."}
+                </div>
+              )}
+
+              {!rowsError && rows.length > 0 && (
+                <>
+                  <Card className="border-dashed border-border/80 bg-muted/15 shadow-none">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Select line of treatment</CardTitle>
+                      <CardDescription>
+                        {rows.length} medication{rows.length === 1 ? "" : "s"} are configured for this category across{" "}
+                        {TREATMENT_LINES.filter((line) => groupedRows[line].length > 0).length} populated treatment
+                        line{TREATMENT_LINES.filter((line) => groupedRows[line].length > 0).length === 1 ? "" : "s"}.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <Label>Line of treatment</Label>
+                      <div className="grid gap-4 md:grid-cols-[minmax(0,420px)_1fr] md:items-center">
+                        <div className="grid grid-cols-3 gap-2">
+                          {TREATMENT_LINES.map((line) => {
+                            const isSelected = selectedLine === String(line);
+
+                            return (
+                              <Button
+                                key={line}
+                                type="button"
+                                variant={isSelected ? "default" : "outline"}
+                                className="w-full"
+                                aria-pressed={isSelected}
+                                onClick={() => handleLineChange(String(line))}
+                              >
+                                Line {line}
                               </Button>
-                              {(canApprove || canPropose) && (
-                                <Button type="button" size="sm" onClick={() => openEditDialog(row)}>
-                                  <PencilLine className="mr-1.5 h-3.5 w-3.5" />
-                                  {canApprove ? "Edit" : "Propose change"}
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
-            ))}
-          </TabsContent>
+                            );
+                          })}
+                        </div>
 
-          {canTrackPending && (
-            <TabsContent value="workflow" className="space-y-4">
+                        <div className="flex min-h-14 items-center rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-muted-foreground">
+                          {selectedLine
+                            ? `Showing Line ${selectedLine}. ${selectedLineRows.length} medication${selectedLineRows.length === 1 ? "" : "s"} are available in this treatment line.`
+                            : "Select a treatment line first to review the medications, doses, and starting schedule guidance for that line."}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {selectedLine ? (
+                    <Card className="border-dashed border-border/80 bg-muted/15 shadow-none">
+                      <CardContent className="space-y-8 p-4 sm:p-6">
+                        <section className="space-y-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h2 className="font-display text-2xl font-semibold text-foreground">
+                                  Factors to consider
+                                </h2>
+                                {canEditContent &&
+                                  (isEditingFactors ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={onCancelEditingFactors}
+                                        disabled={isSavingFactors}
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={onSaveFactors}
+                                        disabled={isSavingFactors}
+                                      >
+                                        {isSavingFactors ? "Saving..." : "Save"}
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      aria-label="Edit factors to consider"
+                                      onClick={onStartEditingFactors}
+                                    >
+                                      <PencilLine className="h-4 w-4" />
+                                    </Button>
+                                  ))}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Review the medications available in Line {selectedLine} before choosing a starting dose.
+                              </p>
+                            </div>
+                          </div>
+
+                          {isEditingFactors ? (
+                            <RichTextEditor
+                              value={factorsContent}
+                              onChange={(value) => onFactorsContentChange?.(value)}
+                              placeholder="Add factors to consider notes..."
+                            />
+                          ) : factorsContentHasValue ? (
+                            <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                              <div
+                                className="rich-text-content text-[15px] leading-relaxed text-muted-foreground sm:text-base"
+                                dangerouslySetInnerHTML={{ __html: factorsContent }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
+                              No factors to consider notes yet.
+                            </div>
+                          )}
+
+                          <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <h3 className="font-display text-lg font-semibold text-foreground">
+                                  Line {selectedLine} Treatment
+                                </h3>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  aria-expanded={!isLineTableCollapsed}
+                                  aria-label={isLineTableCollapsed ? "Expand medication table" : "Collapse medication table"}
+                                  onClick={() => setIsLineTableCollapsed((prev) => !prev)}
+                                >
+                                  {isLineTableCollapsed ? (
+                                    <ChevronDown className="h-4 w-4" />
+                                  ) : (
+                                    <ChevronUp className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {selectedLineRows.length} medication{selectedLineRows.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+
+                            {!isLineTableCollapsed ? (
+                              <div className="mt-4">{renderTreatmentTable(selectedLineRows)}</div>
+                            ) : (
+                              <div className="mt-4 rounded-xl border border-dashed border-border/80 px-4 py-3 text-sm text-muted-foreground">
+                                The medication table is collapsed. Expand it to review all medications in Line {selectedLine}.
+                              </div>
+                            )}
+                          </div>
+                        </section>
+
+                        <div className="border-t border-border/70" />
+
+                        <section className="space-y-4">
+                          <div className="space-y-1">
+                            <h2 className="font-display text-2xl font-semibold text-foreground">
+                              Pick a starting dose and titration schedule
+                            </h2>
+                            <p className="text-sm text-muted-foreground">
+                              Select a medication from Line {selectedLine}. The details below reflect the information stored
+                              for that medication in Initiation of Treatment.
+                            </p>
+                          </div>
+
+                          <div className="space-y-2 md:max-w-md">
+                            <Label>Medication</Label>
+                            <Select value={selectedMedicationId} onValueChange={setSelectedMedicationId}>
+                              <SelectTrigger>
+                                <SelectValue
+                                  placeholder={
+                                    selectedLineRows.length > 0
+                                      ? "Select a medication"
+                                      : "No medications available in this line"
+                                  }
+                                />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {selectedLineRows.map((row) => (
+                                  <SelectItem key={row.id} value={row.id}>
+                                    {row.drug_name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {selectedMedication ? (
+                            <div className="space-y-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border/70 bg-background/80 p-4">
+                                <div className="space-y-2">
+                                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <Badge variant="outline">Line {selectedMedication.line_of_treatment}</Badge>
+                                    <Badge variant="outline">{formatMedicationType(selectedMedication.medication_type)}</Badge>
+                                    {selectedMedication.frequency && (
+                                      <Badge variant="outline">{selectedMedication.frequency}</Badge>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="font-display text-lg font-semibold text-foreground">
+                                      {selectedMedication.drug_name}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      Use the information below to choose the starting dose and titration schedule for this
+                                      medication.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {showActionColumn && (
+                                  <div className="flex flex-wrap gap-2">
+                                    {canViewHistory && (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => void loadHistory(selectedMedication)}
+                                      >
+                                        <FileClock className="mr-1.5 h-3.5 w-3.5" />
+                                        History
+                                      </Button>
+                                    )}
+                                    {canEditRows && (
+                                      <Button type="button" size="sm" onClick={() => openEditDialog(selectedMedication)}>
+                                        <PencilLine className="mr-1.5 h-3.5 w-3.5" />
+                                        {canApprove ? "Edit" : "Propose change"}
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Drug name</p>
+                                  <p className="mt-2 text-sm text-foreground">{selectedMedication.drug_name}</p>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Medication type</p>
+                                  <p className="mt-2 text-sm text-foreground">
+                                    {formatMedicationType(selectedMedication.medication_type)}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Frequency</p>
+                                  <p className="mt-2 text-sm text-foreground">{selectedMedication.frequency || "Not set"}</p>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Initiation dose</p>
+                                  <p className="mt-2 text-sm text-foreground">
+                                    {formatDoseCellValue(selectedMedication.initiation_dose_mg)}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Therapeutic range</p>
+                                  <p className="mt-2 text-sm text-foreground">
+                                    {formatDoseRangeCellValue(
+                                      selectedMedication.therapeutic_min_dose_mg,
+                                      selectedMedication.therapeutic_max_dose_mg,
+                                    )}
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Maximum dose</p>
+                                  <p className="mt-2 text-sm text-foreground">
+                                    {formatDoseCellValue(selectedMedication.max_dose_mg)}
+                                  </p>
+                                </div>
+                                {canViewUpdatedAt && (
+                                  <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Updated</p>
+                                    <p className="mt-2 text-sm text-foreground">
+                                      {formatTimestamp(selectedMedication.updated_at)}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
+                              {selectedLineRows.length > 0
+                                ? `Choose a medication from Line ${selectedLine} to review its starting dose and titration information.`
+                                : "No medications are configured in this line yet."}
+                            </div>
+                          )}
+                        </section>
+
+                        <div className="border-t border-border/70" />
+
+                        <section className="space-y-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <h2 className="font-display text-2xl font-semibold text-foreground">
+                                  Patient education
+                                </h2>
+                                {canEditContent &&
+                                  (isEditingPatientEducation ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={onCancelEditingPatientEducation}
+                                        disabled={isSavingPatientEducation}
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={onSavePatientEducation}
+                                        disabled={isSavingPatientEducation}
+                                      >
+                                        {isSavingPatientEducation ? "Saving..." : "Save"}
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      aria-label="Edit patient education"
+                                      onClick={onStartEditingPatientEducation}
+                                    >
+                                      <PencilLine className="h-4 w-4" />
+                                    </Button>
+                                  ))}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                Add practical counseling, expectations, and monitoring notes for the patient.
+                              </p>
+                            </div>
+                          </div>
+
+                          {isEditingPatientEducation ? (
+                            <RichTextEditor
+                              value={patientEducationContent}
+                              onChange={(value) => onPatientEducationContentChange?.(value)}
+                              placeholder="Add patient education notes..."
+                            />
+                          ) : patientEducationContentHasValue ? (
+                            <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                              <div
+                                className="rich-text-content text-[15px] leading-relaxed text-muted-foreground sm:text-base"
+                                dangerouslySetInnerHTML={{ __html: patientEducationContent }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
+                              No patient education notes yet.
+                            </div>
+                          )}
+                        </section>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
+                      Select Line 1, 2, or 3 to open the treatment workflow for this category.
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+
+            {canTrackPending && (
+              <TabsContent value="workflow" className="space-y-4">
               {pendingError && (
                 <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
                   {pendingError}
@@ -1213,8 +1357,8 @@ const InitiationOfTreatment = ({ categoryId, categoryName }: InitiationOfTreatme
                   })}
                 </div>
               )}
-            </TabsContent>
-          )}
+              </TabsContent>
+            )}
           </Tabs>
         </CardContent>
       </Card>

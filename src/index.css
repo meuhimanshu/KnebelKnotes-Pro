@@ -172,6 +172,14 @@
     margin-bottom: 0.35rem;
   }
 
+  .rich-text-content li > ul,
+  .rich-text-content li > ol,
+  .rich-text-editor li > ul,
+  .rich-text-editor li > ol {
+    margin-top: 0.35rem;
+    margin-bottom: 0;
+  }
+
   .rich-text-content li:last-child,
   .rich-text-editor li:last-child {
     margin-bottom: 0;

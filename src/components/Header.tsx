@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, Menu, X, Settings, Home, LayoutGrid, Shield } from "lucide-react";
+import { Search, Menu, X, Settings, Home, LayoutGrid, Shield, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import knebelLogo from "@/assets/knebel-logo.png";
@@ -7,6 +7,7 @@ import AuthBar from "@/components/AuthBar";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { KNEBEL_MAIN_WEBSITE_LABEL, KNEBEL_MAIN_WEBSITE_URL } from "@/lib/siteLinks";
 
 const Header = () => {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -101,6 +102,12 @@ const Header = () => {
               Sub Admin
             </Link>
           )}
+          <Button asChild variant="outline" size="sm" className="ml-2 gap-2">
+            <a href={KNEBEL_MAIN_WEBSITE_URL}>
+              <ArrowLeft className="h-4 w-4" />
+              {KNEBEL_MAIN_WEBSITE_LABEL}
+            </a>
+          </Button>
         </nav>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
@@ -202,6 +209,14 @@ const Header = () => {
                 Sub Admin
               </Link>
             )}
+            <a
+              href={KNEBEL_MAIN_WEBSITE_URL}
+              onClick={() => setMobileOpen(false)}
+              className="mt-1 flex items-center gap-3 rounded-lg border border-border/70 px-3 py-2.5 text-base font-medium text-black transition-colors hover:bg-muted dark:text-white"
+            >
+              <ArrowLeft className="h-5 w-5" />
+              {KNEBEL_MAIN_WEBSITE_LABEL}
+            </a>
           </div>
           <div className="mt-4 border-t border-border/70 pt-4">
             <AuthBar variant="mobile" />

@@ -91,6 +91,9 @@ const selectionLivesInEditor = (editor: HTMLDivElement | null) => {
   return editor.contains(anchorNode) && editor.contains(focusNode);
 };
 
+const isListElement = (element: Element | null): element is HTMLOListElement | HTMLUListElement =>
+  Boolean(element && ["OL", "UL"].includes(element.tagName));
+
 const getSelectionListItem = (editor: HTMLDivElement | null) => {
   if (!selectionLivesInEditor(editor)) {
     return null;
@@ -143,9 +146,29 @@ const placeCaretAtStart = (element: HTMLElement) => {
   selection.addRange(range);
 };
 
+const cleanupEmptyList = (list: Element | null) => {
+  if (isListElement(list) && list.children.length === 0) {
+    list.remove();
+  }
+};
+
+const outdentNestedListItem = (listItem: HTMLLIElement) => {
+  const currentList = listItem.parentElement;
+  const parentListItem = currentList?.closest("li");
+  const parentList = parentListItem?.parentElement;
+
+  if (!isListElement(currentList) || !parentListItem || !isListElement(parentList)) {
+    return null;
+  }
+
+  parentList.insertBefore(listItem, parentListItem.nextSibling);
+  cleanupEmptyList(currentList);
+  return listItem;
+};
+
 const unwrapListItem = (listItem: HTMLLIElement) => {
   const list = listItem.parentElement;
-  if (!list || !["OL", "UL"].includes(list.tagName)) {
+  if (!isListElement(list)) {
     return null;
   }
 
@@ -159,6 +182,7 @@ const unwrapListItem = (listItem: HTMLLIElement) => {
   const listNextSibling = list.nextSibling;
   const paragraph = document.createElement("div");
   const trailingList = hasNextItems ? (list.cloneNode(false) as HTMLOListElement | HTMLUListElement) : null;
+  const nestedLists: Array<HTMLOListElement | HTMLUListElement> = [];
 
   if (trailingList) {
     while (listItem.nextSibling) {
@@ -167,7 +191,14 @@ const unwrapListItem = (listItem: HTMLLIElement) => {
   }
 
   while (listItem.firstChild) {
-    paragraph.appendChild(listItem.firstChild);
+    const child = listItem.firstChild;
+
+    if (child instanceof HTMLElement && isListElement(child)) {
+      nestedLists.push(listItem.removeChild(child) as HTMLOListElement | HTMLUListElement);
+      continue;
+    }
+
+    paragraph.appendChild(listItem.removeChild(child));
   }
 
   if (!paragraph.childNodes.length) {
@@ -178,21 +209,48 @@ const unwrapListItem = (listItem: HTMLLIElement) => {
 
   if (hasPreviousItems) {
     parent.insertBefore(paragraph, listNextSibling);
+    nestedLists.forEach((nestedList) => {
+      parent.insertBefore(nestedList, listNextSibling);
+    });
     if (trailingList && trailingList.children.length > 0) {
       parent.insertBefore(trailingList, listNextSibling);
     }
   } else {
     parent.insertBefore(paragraph, list);
+    nestedLists.forEach((nestedList) => {
+      parent.insertBefore(nestedList, list);
+    });
     if (trailingList && trailingList.children.length > 0) {
       parent.insertBefore(trailingList, list);
     }
   }
 
-  if (!list.children.length) {
-    list.remove();
-  }
+  cleanupEmptyList(list);
 
   return paragraph;
+};
+
+const indentListItem = (listItem: HTMLLIElement) => {
+  const currentList = listItem.parentElement;
+  const previousSibling = listItem.previousElementSibling as HTMLLIElement | null;
+
+  if (!isListElement(currentList) || !previousSibling) {
+    return null;
+  }
+
+  const lastChild = previousSibling.lastElementChild;
+  const nestedList =
+    lastChild && isListElement(lastChild)
+      ? lastChild
+      : (document.createElement(currentList.tagName.toLowerCase()) as HTMLOListElement | HTMLUListElement);
+
+  if (nestedList.parentElement !== previousSibling) {
+    previousSibling.appendChild(nestedList);
+  }
+
+  nestedList.appendChild(listItem);
+  cleanupEmptyList(currentList);
+  return listItem;
 };
 
 const getSelectionFontSize = (editor: HTMLDivElement | null) => {
@@ -317,11 +375,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className }: RichTextEdi
     syncValue();
   };
 
-  const handleBackspace = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Backspace") {
-      return;
-    }
-
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const editor = editorRef.current;
     const selection = window.getSelection();
     if (!editor || !selection?.isCollapsed) {
@@ -329,17 +383,36 @@ const RichTextEditor = ({ value, onChange, placeholder, className }: RichTextEdi
     }
 
     const listItem = getSelectionListItem(editor);
-    if (!listItem || !isSelectionAtStartOfElement(editor, listItem)) {
+    if (event.key === "Tab") {
+      if (!listItem) {
+        return;
+      }
+
+      event.preventDefault();
+      const movedListItem = event.shiftKey
+        ? outdentNestedListItem(listItem) ?? unwrapListItem(listItem)
+        : indentListItem(listItem);
+
+      if (!movedListItem) {
+        return;
+      }
+
+      placeCaretAtStart(movedListItem);
+      syncValue();
+      return;
+    }
+
+    if (event.key !== "Backspace" || !listItem || !isSelectionAtStartOfElement(editor, listItem)) {
       return;
     }
 
     event.preventDefault();
-    const paragraph = unwrapListItem(listItem);
-    if (!paragraph) {
+    const nextTarget = outdentNestedListItem(listItem) ?? unwrapListItem(listItem);
+    if (!nextTarget) {
       return;
     }
 
-    placeCaretAtStart(paragraph);
+    placeCaretAtStart(nextTarget);
     syncValue();
   };
 
@@ -378,7 +451,9 @@ const RichTextEditor = ({ value, onChange, placeholder, className }: RichTextEdi
             <Icon className="h-4 w-4" />
           </Toggle>
         ))}
-        <span className="text-xs text-muted-foreground">Select text, then choose size, format, or list style.</span>
+        <span className="text-xs text-muted-foreground">
+          Select text, then choose size, format, or list style. Use Tab and Shift+Tab for sublists.
+        </span>
       </div>
 
       <div
@@ -393,7 +468,7 @@ const RichTextEditor = ({ value, onChange, placeholder, className }: RichTextEdi
           isFocusedRef.current = false;
           normalizeEditorValue();
         }}
-        onKeyDown={handleBackspace}
+        onKeyDown={handleKeyDown}
         onKeyUp={() => setFormatState(getSelectionFormatState(editorRef.current))}
         onMouseUp={() => setFormatState(getSelectionFormatState(editorRef.current))}
         onFocus={() => {

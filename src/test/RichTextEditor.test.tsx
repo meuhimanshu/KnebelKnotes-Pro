@@ -48,4 +48,42 @@ describe("RichTextEditor", () => {
     expect(editor.innerHTML).toBe("<ul><li>One</li></ul><div>Two</div><ul><li>Three</li></ul>");
     expect(onChange).toHaveBeenCalledWith("<ul><li>One</li></ul><div>Two</div><ul><li>Three</li></ul>");
   });
+
+  it("creates a nested sublist when tab is pressed on a list item", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor value="<ul><li>One</li><li>Two</li><li>Three</li></ul>" onChange={onChange} />,
+    );
+    const editor = container.querySelector('[contenteditable="true"]') as HTMLDivElement;
+    const secondListItem = editor.querySelectorAll("li")[1];
+    const secondListItemText = secondListItem.firstChild as Text;
+
+    fireEvent.focus(editor);
+    setCollapsedSelection(secondListItemText, 0);
+    fireEvent.keyDown(editor, { key: "Tab" });
+
+    expect(editor.innerHTML).toBe("<ul><li>One<ul><li>Two</li></ul></li><li>Three</li></ul>");
+    expect(onChange).toHaveBeenCalledWith("<ul><li>One<ul><li>Two</li></ul></li><li>Three</li></ul>");
+  });
+
+  it("moves a nested list item up one level per backspace press", () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <RichTextEditor value="<ul><li>Parent<ul><li>Child</li></ul></li></ul>" onChange={onChange} />,
+    );
+    const editor = container.querySelector('[contenteditable="true"]') as HTMLDivElement;
+    const childListItem = editor.querySelectorAll("li")[1];
+    const childListItemText = childListItem.firstChild as Text;
+
+    fireEvent.focus(editor);
+    setCollapsedSelection(childListItemText, 0);
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(editor.innerHTML).toBe("<ul><li>Parent</li><li>Child</li></ul>");
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(editor.innerHTML).toBe("<ul><li>Parent</li></ul><div>Child</div>");
+    expect(onChange).toHaveBeenLastCalledWith("<ul><li>Parent</li></ul><div>Child</div>");
+  });
 });

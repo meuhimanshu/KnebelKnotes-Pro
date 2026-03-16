@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { X } from "lucide-react";
 import Layout from "@/components/Layout";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +18,7 @@ const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showFeatureBanner, setShowFeatureBanner] = useState(true);
 
   const loadCategories = useCallback(async () => {
     const { data, error } = await supabase
@@ -51,6 +53,24 @@ const Categories = () => {
 
   return (
     <Layout>
+      {showFeatureBanner && (
+        <div className="border-b border-border/70 bg-primary/10">
+          <div className="container flex items-center justify-between gap-4 py-3">
+            <p className="text-sm font-medium text-foreground">
+              New Feature: Clinical Dosage Support for Depression
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowFeatureBanner(false)}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+              aria-label="Dismiss new feature message"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="container py-10 sm:py-12">
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
