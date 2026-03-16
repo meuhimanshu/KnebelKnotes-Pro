@@ -1,6 +1,6 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, Menu, X, Settings, Home, LayoutGrid, Shield, ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Search, Menu, X, Settings, Home, LayoutGrid, Shield, ArrowLeft, ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import knebelLogo from "@/assets/knebel-logo.png";
 import AuthBar from "@/components/AuthBar";
@@ -8,23 +8,56 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { KNEBEL_MAIN_WEBSITE_LABEL, KNEBEL_MAIN_WEBSITE_URL } from "@/lib/siteLinks";
+import { supabase } from "@/lib/supabaseClient";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+type HeaderCategory = {
+  id: string;
+  short_code: string;
+  name: string;
+};
 
 const Header = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileCategoryOpen, setMobileCategoryOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [categories, setCategories] = useState<HeaderCategory[]>([]);
   const navigate = useNavigate();
-  const location = useLocation();
   const { profile } = useAuth();
   const showSubAdminTab = profile?.role === "sub_admin";
-  const isHome = location.pathname === "/";
 
-  const headerClass = cn(
-    "sticky top-0 z-50 border-b transition-colors",
-    isHome
-      ? "border-transparent bg-transparent sm:border-border/70 sm:bg-background/85 sm:backdrop-blur supports-[backdrop-filter]:sm:bg-background/70"
-      : "border-border/70 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70",
-  );
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCategories = async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id, short_code, name")
+        .order("name", { ascending: true });
+
+      if (!isMounted || error) {
+        return;
+      }
+
+      setCategories(data ?? []);
+    };
+
+    void loadCategories();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const headerClass = "sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70";
 
   const navLinkClass = cn(
     "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
@@ -38,7 +71,7 @@ const Header = () => {
 
   const logoSubtitleClass = cn(
     "hidden text-[10px] font-medium uppercase tracking-widest sm:block",
-    isHome ? "text-primary-foreground/70 sm:text-muted-foreground" : "text-muted-foreground",
+    "text-muted-foreground",
   );
 
   const iconButtonClass = cn(
@@ -53,6 +86,12 @@ const Header = () => {
       setSearchOpen(false);
       setQuery("");
     }
+  };
+
+  const handleCategorySelect = (categoryId: string) => {
+    navigate(`/category/${categoryId}`);
+    setMobileOpen(false);
+    setMobileCategoryOpen(false);
   };
 
   return (
@@ -79,13 +118,31 @@ const Header = () => {
             <Home className="h-4 w-4" />
             Home
           </Link>
-          <Link
-            to="/categories"
-            className={navLinkClass}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            Categories
-          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className={navLinkClass}>
+                <LayoutGrid className="h-4 w-4" />
+                Category
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel>Choose a category</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {categories.length > 0 ? (
+                categories.map((category) => (
+                  <DropdownMenuItem key={category.id} onSelect={() => handleCategorySelect(category.id)}>
+                    <span className="min-w-0 flex-1 truncate">{category.name}</span>
+                    <span className="ml-3 rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {category.short_code}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              ) : (
+                <DropdownMenuItem disabled>No categories available</DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Link
             to="/search"
             className={navLinkClass}
@@ -175,14 +232,40 @@ const Header = () => {
               <Home className="h-5 w-5" />
               Home
             </Link>
-            <Link
-              to="/categories"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium text-black hover:bg-muted dark:text-white"
-            >
-              <LayoutGrid className="h-5 w-5" />
-              Categories
-            </Link>
+            <div className="rounded-lg border border-border/70">
+              <button
+                type="button"
+                onClick={() => setMobileCategoryOpen((prev) => !prev)}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-base font-medium text-black transition-colors hover:bg-muted dark:text-white"
+              >
+                <LayoutGrid className="h-5 w-5" />
+                Category
+                <ChevronDown className={cn("ml-auto h-4 w-4 transition-transform", mobileCategoryOpen && "rotate-180")} />
+              </button>
+              {mobileCategoryOpen && (
+                <div className="border-t border-border/70 px-2 py-2">
+                  <div className="flex flex-col gap-1">
+                    {categories.length > 0 ? (
+                      categories.map((category) => (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => handleCategorySelect(category.id)}
+                          className="flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-black transition-colors hover:bg-muted dark:text-white"
+                        >
+                          <span className="truncate">{category.name}</span>
+                          <span className="ml-3 rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            {category.short_code}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No categories available</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <Link
               to="/search"
               onClick={() => setMobileOpen(false)}

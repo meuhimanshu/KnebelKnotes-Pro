@@ -54,15 +54,15 @@ const Categories = () => {
   return (
     <Layout>
       {showFeatureBanner && (
-        <div className="border-b border-border/70 bg-primary/10">
+        <div className="border-b border-emerald-300/60 bg-gradient-to-r from-emerald-100 via-green-100 to-lime-100 dark:border-emerald-800/70 dark:from-emerald-950/90 dark:via-green-900/80 dark:to-lime-950/90">
           <div className="container flex items-center justify-between gap-4 py-3">
-            <p className="text-sm font-medium text-foreground">
+            <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-50">
               New Feature: Clinical Dosage Support for Depression
             </p>
             <button
               type="button"
               onClick={() => setShowFeatureBanner(false)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-emerald-800 transition-colors hover:bg-white/60 hover:text-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900/60 dark:hover:text-emerald-50"
               aria-label="Dismiss new feature message"
             >
               <X className="h-4 w-4" />
