@@ -15,7 +15,7 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import RichTextEditor from "@/components/RichTextEditor";
-import { formatDoseMg, formatDoseRangeMg } from "@/lib/treatmentProgression";
+import { formatDoseMg } from "@/lib/treatmentProgression";
 import { richTextHasContent } from "@/lib/richText";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -328,9 +328,6 @@ const formatMedicationType = (value: string) => value.replace(/_/g, " ");
 
 const formatDoseCellValue = (value: number | null) => (value === null ? "Not set" : formatDoseMg(value));
 
-const formatDoseRangeCellValue = (min: number | null, max: number | null) =>
-  min === null || max === null ? "Not set" : formatDoseRangeMg(min, max);
-
 type InitiationOfTreatmentProps = {
   categoryId: string;
   categoryName?: string;
@@ -401,7 +398,6 @@ const InitiationOfTreatment = ({
   const canPropose = profile?.role === "sub_admin";
   const canEditRows = canApprove || canPropose;
   const canViewHistory = Boolean(user);
-  const canViewUpdatedAt = Boolean(user);
   const canTrackPending = canApprove || canPropose;
   const showActionColumn = canViewHistory || canEditRows;
 
@@ -799,9 +795,7 @@ const InitiationOfTreatment = ({
               <TableHead>Type</TableHead>
               <TableHead>Frequency</TableHead>
               <TableHead>Initiation Dose</TableHead>
-              <TableHead>Therapeutic Range</TableHead>
               <TableHead>Max Dose</TableHead>
-              {canViewUpdatedAt && <TableHead>Updated</TableHead>}
               {showActionColumn && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
@@ -825,11 +819,7 @@ const InitiationOfTreatment = ({
                 <TableCell>{formatMedicationType(row.medication_type)}</TableCell>
                 <TableCell>{row.frequency || "Not set"}</TableCell>
                 <TableCell>{formatDoseCellValue(row.initiation_dose_mg)}</TableCell>
-                <TableCell>{formatDoseRangeCellValue(row.therapeutic_min_dose_mg, row.therapeutic_max_dose_mg)}</TableCell>
                 <TableCell>{formatDoseCellValue(row.max_dose_mg)}</TableCell>
-                {canViewUpdatedAt && (
-                  <TableCell className="text-muted-foreground">{formatTimestamp(row.updated_at)}</TableCell>
-                )}
                 {showActionColumn && (
                   <TableCell>
                     <div className="flex justify-end gap-2">
@@ -1173,15 +1163,6 @@ const InitiationOfTreatment = ({
                                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Initiation dose</p>
                                   <p className="mt-2 text-sm text-foreground">
                                     {formatDoseCellValue(selectedMedication.initiation_dose_mg)}
-                                  </p>
-                                </div>
-                                <div className="rounded-xl border border-border/70 bg-background/70 p-4">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Therapeutic range</p>
-                                  <p className="mt-2 text-sm text-foreground">
-                                    {formatDoseRangeCellValue(
-                                      selectedMedication.therapeutic_min_dose_mg,
-                                      selectedMedication.therapeutic_max_dose_mg,
-                                    )}
                                   </p>
                                 </div>
                                 <div className="rounded-xl border border-border/70 bg-background/70 p-4">

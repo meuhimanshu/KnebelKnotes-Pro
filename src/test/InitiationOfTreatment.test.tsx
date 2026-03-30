@@ -101,6 +101,7 @@ describe("InitiationOfTreatment", () => {
     expect(screen.getByRole("button", { name: "Collapse medication table" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Log in to make changes" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Updated" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Therapeutic Range" })).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Propose change" })).not.toBeInTheDocument();
@@ -177,10 +178,13 @@ describe("InitiationOfTreatment", () => {
     const drugNameCard = screen.getByText("Drug name").closest("div");
     expect(drugNameCard).not.toBeNull();
     expect(within(drugNameCard!).getByText("Fluoxetine")).toBeInTheDocument();
+    expect(
+      screen.queryByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "Therapeutic range"),
+    ).not.toBeInTheDocument();
     expect(scrollIntoViewMock).toHaveBeenCalled();
   });
 
-  it("does not show the updated detail card below the medication selector", async () => {
+  it("keeps signed-in workflow actions while omitting updated and therapeutic range displays", async () => {
     vi.mocked(useAuth).mockReturnValue({
       user: {
         id: "user-1",
@@ -227,11 +231,13 @@ describe("InitiationOfTreatment", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select medication Sertraline" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("columnheader", { name: "Updated" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "History" }).length).toBeGreaterThan(0);
     });
 
+    expect(screen.queryByRole("columnheader", { name: "Updated" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Therapeutic Range" })).not.toBeInTheDocument();
     expect(
-      screen.queryByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "Updated"),
+      screen.queryByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "Therapeutic range"),
     ).not.toBeInTheDocument();
   });
 });
