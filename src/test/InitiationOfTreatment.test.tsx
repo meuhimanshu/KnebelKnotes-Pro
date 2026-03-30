@@ -18,14 +18,27 @@ vi.mock("@/lib/supabaseClient", () => ({
 
 describe("InitiationOfTreatment", () => {
   const scrollIntoViewMock = vi.fn();
-  const mockPendingQueueQuery = () => {
-    const order = vi.fn().mockResolvedValue({ data: [], error: null });
-    const eq = vi.fn(() => ({ order }));
-    const select = vi.fn(() => ({ eq }));
+  const mockPendingQueueQuery = (
+    pendingRows: Array<Record<string, unknown>> = [],
+    profileRows: Array<Record<string, unknown>> = [],
+  ) => {
+    const pendingQuery = {
+      eq: vi.fn(),
+      order: vi.fn().mockResolvedValue({ data: pendingRows, error: null }),
+    };
+    pendingQuery.eq.mockImplementation(() => pendingQuery);
+
+    const pendingSelect = vi.fn(() => pendingQuery);
+    const profileIn = vi.fn().mockResolvedValue({ data: profileRows, error: null });
+    const profileSelect = vi.fn(() => ({ in: profileIn }));
 
     vi.mocked(supabase.from).mockImplementation((table: string) => {
       if (table === "pending_antidepressant_edits") {
-        return { select } as never;
+        return { select: pendingSelect } as never;
+      }
+
+      if (table === "profiles") {
+        return { select: profileSelect } as never;
       }
 
       return {
@@ -383,5 +396,295 @@ describe("InitiationOfTreatment", () => {
         p_change_reason: "Removing duplicate medication row.",
       });
     });
+  });
+
+  it("lets reviewed proposals be removed from the workflow queue while keeping pending ones locked", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      user: {
+        id: "user-1",
+      },
+      profile: {
+        role: "super_admin",
+      },
+      loading: false,
+      session: null,
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      refreshProfile: vi.fn(),
+    } as never);
+
+    mockPendingQueueQuery([
+      {
+        id: "pending-approved",
+        drug_id: "drug-1",
+        category_id: "category-1",
+        proposed_by_user_id: "user-2",
+        previous_data: {
+          drug_name: "Sertraline",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 50,
+          therapeutic_min_dose_mg: 50,
+          therapeutic_max_dose_mg: 200,
+          max_dose_mg: 200,
+          is_active: true,
+        },
+        proposed_data: {
+          drug_name: "Sertraline",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation; ↓ Weight gain",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 50,
+          therapeutic_min_dose_mg: 50,
+          therapeutic_max_dose_mg: 200,
+          max_dose_mg: 200,
+          is_active: true,
+        },
+        change_reason: "Add the reviewed tolerability note.",
+        status: "approved",
+        review_note: "Applied.",
+        reviewed_by_user_id: "user-1",
+        reviewed_at: "2026-03-30T16:00:00.000Z",
+        created_at: "2026-03-30T15:00:00.000Z",
+      },
+      {
+        id: "pending-open",
+        drug_id: "drug-2",
+        category_id: "category-1",
+        proposed_by_user_id: "user-3",
+        previous_data: {
+          drug_name: "Fluoxetine",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: null,
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 20,
+          therapeutic_min_dose_mg: 20,
+          therapeutic_max_dose_mg: 60,
+          max_dose_mg: 80,
+          is_active: true,
+        },
+        proposed_data: {
+          drug_name: "Fluoxetine",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 20,
+          therapeutic_min_dose_mg: 20,
+          therapeutic_max_dose_mg: 60,
+          max_dose_mg: 80,
+          is_active: true,
+        },
+        change_reason: "Add pending note.",
+        status: "pending",
+        review_note: null,
+        reviewed_by_user_id: null,
+        reviewed_at: null,
+        created_at: "2026-03-30T17:00:00.000Z",
+      },
+    ]);
+
+    vi.mocked(supabase.rpc)
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: "drug-1",
+            category_id: "category-1",
+            drug_name: "Sertraline",
+            medication_type: "monotherapy",
+            frequency: "daily",
+            tolerability_less: "↓ Sedation",
+            tolerability_more: null,
+            safety: null,
+            cost: "Low",
+            line_of_treatment: 1,
+            initiation_dose_mg: 50,
+            therapeutic_min_dose_mg: 50,
+            therapeutic_max_dose_mg: 200,
+            max_dose_mg: 200,
+            updated_at: "2026-03-30T16:30:00.000Z",
+            is_active: true,
+          },
+          {
+            id: "drug-2",
+            category_id: "category-1",
+            drug_name: "Fluoxetine",
+            medication_type: "monotherapy",
+            frequency: "daily",
+            tolerability_less: null,
+            tolerability_more: null,
+            safety: null,
+            cost: "Low",
+            line_of_treatment: 1,
+            initiation_dose_mg: 20,
+            therapeutic_min_dose_mg: 20,
+            therapeutic_max_dose_mg: 60,
+            max_dose_mg: 80,
+            updated_at: "2026-03-30T16:30:00.000Z",
+            is_active: true,
+          },
+        ],
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: null,
+        error: null,
+      } as never);
+
+    render(
+      <MemoryRouter>
+        <InitiationOfTreatment categoryId="category-1" categoryName="Depression" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Initiation of Treatment")).toBeInTheDocument();
+    });
+
+    const workflowTab = screen.getByRole("tab", { name: "Pending Approvals" });
+    fireEvent.mouseDown(workflowTab);
+    fireEvent.click(workflowTab);
+
+    await waitFor(() => {
+      expect(workflowTab.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByText("Sertraline")).toBeInTheDocument();
+      expect(screen.getByText("Fluoxetine")).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole("button", { name: "Remove Sertraline from workflow queue" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove Fluoxetine from workflow queue" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Sertraline from workflow queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove from queue" }));
+
+    await waitFor(() => {
+      expect(supabase.rpc).toHaveBeenCalledWith("delete_reviewed_antidepressant_pending_edit", {
+        p_pending_edit_id: "pending-approved",
+      });
+    });
+  });
+
+  it("lets super admins approve proposals even if the master row changed after submission", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      user: {
+        id: "user-1",
+      },
+      profile: {
+        role: "super_admin",
+      },
+      loading: false,
+      session: null,
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      refreshProfile: vi.fn(),
+    } as never);
+
+    mockPendingQueueQuery([
+      {
+        id: "pending-stale",
+        drug_id: "drug-1",
+        category_id: "category-1",
+        proposed_by_user_id: "user-2",
+        previous_data: {
+          drug_name: "Sertraline",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 50,
+          therapeutic_min_dose_mg: 50,
+          therapeutic_max_dose_mg: 200,
+          max_dose_mg: 200,
+          is_active: true,
+        },
+        proposed_data: {
+          drug_name: "Sertraline",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation; ↓ Weight gain",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 50,
+          therapeutic_min_dose_mg: 50,
+          therapeutic_max_dose_mg: 200,
+          max_dose_mg: 200,
+          is_active: true,
+        },
+        change_reason: "Carry forward the reviewed tolerability update.",
+        status: "pending",
+        review_note: null,
+        reviewed_by_user_id: null,
+        reviewed_at: null,
+        created_at: "2026-03-30T15:00:00.000Z",
+      },
+    ]);
+
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: [
+        {
+          id: "drug-1",
+          category_id: "category-1",
+          drug_name: "Sertraline",
+          medication_type: "monotherapy",
+          frequency: "daily",
+          tolerability_less: "↓ Sedation; ↓ GI distress",
+          tolerability_more: null,
+          safety: null,
+          cost: "Low",
+          line_of_treatment: 1,
+          initiation_dose_mg: 50,
+          therapeutic_min_dose_mg: 50,
+          therapeutic_max_dose_mg: 200,
+          max_dose_mg: 200,
+          updated_at: "2026-03-30T16:30:00.000Z",
+          is_active: true,
+        },
+      ],
+      error: null,
+    } as never);
+
+    render(
+      <MemoryRouter>
+        <InitiationOfTreatment categoryId="category-1" categoryName="Depression" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Initiation of Treatment")).toBeInTheDocument();
+    });
+
+    const workflowTab = screen.getByRole("tab", { name: "Pending Approvals" });
+    fireEvent.mouseDown(workflowTab);
+    fireEvent.click(workflowTab);
+
+    await waitFor(() => {
+      expect(workflowTab.getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByText("Sertraline")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("The master row changed after this proposal was submitted. This proposal should be reviewed and resubmitted against the latest data.")).not.toBeInTheDocument();
+    expect(screen.queryByText("stale")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).not.toBeDisabled();
   });
 });

@@ -291,22 +291,6 @@ const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
   change_reason: "",
 });
 
-const toSnapshot = (row: AntidepressantMasterRow): AntidepressantSnapshot => ({
-  drug_name: row.drug_name,
-  medication_type: row.medication_type,
-  frequency: row.frequency,
-  tolerability_less: row.tolerability_less,
-  tolerability_more: row.tolerability_more,
-  safety: row.safety,
-  cost: row.cost,
-  line_of_treatment: row.line_of_treatment,
-  initiation_dose_mg: row.initiation_dose_mg,
-  therapeutic_min_dose_mg: row.therapeutic_min_dose_mg,
-  therapeutic_max_dose_mg: row.therapeutic_max_dose_mg,
-  max_dose_mg: row.max_dose_mg,
-  is_active: row.is_active,
-});
-
 const formatTimestamp = (value: string) => format(new Date(value), "MMM d, yyyy h:mm a");
 
 const buildActorLabel = (profile: { full_name: string | null; username: string | null; email: string | null } | null) =>
@@ -343,6 +327,7 @@ const normalizeTreatmentModuleError = (message: string) => {
       "public.reject_antidepressant_pending_edit",
       "public.delete_antidepressant_with_audit",
       "public.submit_antidepressant_pending_delete",
+      "public.delete_reviewed_antidepressant_pending_edit",
     ].some((name) => message.includes(name));
 
   if (!hasSchemaCacheMiss && !hasMissingCategoryScopeColumn && !hasMissingMetadataColumn) {
@@ -357,9 +342,6 @@ const getStatusVariant = (status: PendingStatus) => {
   if (status === "rejected") return "destructive" as const;
   return "outline" as const;
 };
-
-const snapshotsMatch = (left: AntidepressantSnapshot | null | undefined, right: AntidepressantSnapshot | null | undefined) =>
-  AUDITED_FIELDS.every(({ key }) => left?.[key] === right?.[key]);
 
 const isDeleteProposal = (
   item:
@@ -557,6 +539,9 @@ const InitiationOfTreatment = ({
   const [deleteReason, setDeleteReason] = useState("");
   const [deleteReasonError, setDeleteReasonError] = useState<string | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [queueCleanupOpen, setQueueCleanupOpen] = useState(false);
+  const [queueCleanupTarget, setQueueCleanupTarget] = useState<PendingEditRow | null>(null);
+  const [queueCleanupSaving, setQueueCleanupSaving] = useState(false);
   const [selectedLine, setSelectedLine] = useState("");
   const [selectedMedicationId, setSelectedMedicationId] = useState("");
   const [isLineTableCollapsed, setIsLineTableCollapsed] = useState(false);
@@ -787,6 +772,19 @@ const InitiationOfTreatment = ({
     setDeleteOpen(true);
   };
 
+  const openQueueCleanupDialog = (item: PendingEditRow) => {
+    if (!user || item.status === "pending") {
+      return;
+    }
+
+    if (!canApprove && item.proposed_by_user_id !== user.id) {
+      return;
+    }
+
+    setQueueCleanupTarget(item);
+    setQueueCleanupOpen(true);
+  };
+
   const loadHistory = async (row: AntidepressantMasterRow) => {
     if (!user) {
       toast.error("Sign in to view audit history.");
@@ -1010,6 +1008,28 @@ const InitiationOfTreatment = ({
     if (canApprove && historyTarget?.id === target.id) {
       await loadHistory(target);
     }
+  };
+
+  const handleQueueCleanup = async () => {
+    if (!queueCleanupTarget || queueCleanupTarget.status === "pending") {
+      return;
+    }
+
+    setQueueCleanupSaving(true);
+    const { error } = await supabase.rpc("delete_reviewed_antidepressant_pending_edit", {
+      p_pending_edit_id: queueCleanupTarget.id,
+    });
+    setQueueCleanupSaving(false);
+
+    if (error) {
+      toast.error(normalizeTreatmentModuleError(error.message));
+      return;
+    }
+
+    toast.success("Reviewed proposal removed from the workflow queue.");
+    setQueueCleanupOpen(false);
+    setQueueCleanupTarget(null);
+    await loadPendingRows();
   };
 
   const renderTreatmentTable = (lineRows: AntidepressantMasterRow[]) => {
@@ -1591,12 +1611,10 @@ const InitiationOfTreatment = ({
               ) : (
                 <div className="space-y-4">
                   {pendingRows.map((item) => {
-                    const currentRow = masterRowMap.get(item.drug_id);
-                    const currentSnapshot = currentRow ? toSnapshot(currentRow) : null;
                     const changedFields = AUDITED_FIELDS.filter(({ key }) => item.previous_data?.[key] !== item.proposed_data?.[key]);
                     const deleteProposal = isDeleteProposal(item);
-                    const isStale =
-                      item.status === "pending" && currentSnapshot ? !snapshotsMatch(item.previous_data, currentSnapshot) : false;
+                    const canRemoveReviewedProposal =
+                      item.status !== "pending" && Boolean(user) && (canApprove || item.proposed_by_user_id === user?.id);
 
                     return (
                       <div key={item.id} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
@@ -1606,7 +1624,6 @@ const InitiationOfTreatment = ({
                               <p className="text-sm font-medium text-foreground">{item.proposed_data.drug_name}</p>
                               <Badge variant={getStatusVariant(item.status)}>{item.status}</Badge>
                               {deleteProposal && <Badge variant="destructive">delete request</Badge>}
-                              {isStale && <Badge variant="destructive">stale</Badge>}
                             </div>
                             <p className="mt-1 text-xs text-muted-foreground">
                               Proposed by {item.proposed_by_label} on {formatTimestamp(item.created_at)}
@@ -1618,22 +1635,43 @@ const InitiationOfTreatment = ({
                             )}
                           </div>
 
-                          {canApprove && item.status === "pending" && (
-                            <div className="flex gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={isStale}
-                                onClick={() => openReviewDialog(item, "approve")}
-                              >
-                                {deleteProposal ? "Approve delete" : "Approve"}
-                              </Button>
-                              <Button type="button" variant="destructive" size="sm" onClick={() => openReviewDialog(item, "reject")}>
-                                {deleteProposal ? "Reject delete" : "Reject"}
-                              </Button>
+                          {(canApprove && item.status === "pending") || canRemoveReviewedProposal ? (
+                            <div className="flex flex-wrap gap-2">
+                              {canApprove && item.status === "pending" && (
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openReviewDialog(item, "approve")}
+                                  >
+                                    {deleteProposal ? "Approve delete" : "Approve"}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => openReviewDialog(item, "reject")}
+                                  >
+                                    {deleteProposal ? "Reject delete" : "Reject"}
+                                  </Button>
+                                </>
+                              )}
+                              {canRemoveReviewedProposal && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                  aria-label={`Remove ${item.proposed_data.drug_name} from workflow queue`}
+                                  onClick={() => openQueueCleanupDialog(item)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Remove
+                                </Button>
+                              )}
                             </div>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="mt-3 rounded-xl bg-background/70 p-3 text-sm text-foreground">
@@ -1643,13 +1681,6 @@ const InitiationOfTreatment = ({
                         {item.review_note && (
                           <div className="mt-3 rounded-xl border border-border/70 bg-background/70 p-3 text-sm text-foreground">
                             <span className="font-medium">Review note:</span> {item.review_note}
-                          </div>
-                        )}
-
-                        {isStale && (
-                          <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-                            The master row changed after this proposal was submitted. This proposal should be reviewed and
-                            resubmitted against the latest data.
                           </div>
                         )}
 
@@ -1991,6 +2022,55 @@ const InitiationOfTreatment = ({
                 : canApprove
                   ? "Delete medication"
                   : "Submit delete request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={queueCleanupOpen}
+        onOpenChange={(open) => {
+          setQueueCleanupOpen(open);
+          if (!open && !queueCleanupSaving) {
+            setQueueCleanupTarget(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              Remove reviewed proposal
+            </DialogTitle>
+            <DialogDescription>
+              This removes the reviewed proposal from the workflow queue. Pending proposals cannot be removed here.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-xl border border-border/70 bg-muted/30 p-4 text-sm text-foreground">
+            <span className="font-medium">Proposal:</span> {queueCleanupTarget?.proposed_data.drug_name ?? "Unknown medication"}
+            {queueCleanupTarget?.status ? (
+              <span className="ml-2 text-muted-foreground">({queueCleanupTarget.status})</span>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setQueueCleanupOpen(false)}
+              disabled={queueCleanupSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleQueueCleanup()}
+              disabled={queueCleanupSaving}
+            >
+              {queueCleanupSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {queueCleanupSaving ? "Removing..." : "Remove from queue"}
             </Button>
           </DialogFooter>
         </DialogContent>
