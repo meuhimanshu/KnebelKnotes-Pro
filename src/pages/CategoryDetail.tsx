@@ -46,6 +46,7 @@ type CategoryDetailRecord = {
   patient_education: string | null;
   improvement: string | null;
   reassessment: string | null;
+  antidepressant_augment: string | null;
   trial: string | null;
   assessment_initial_response: string | null;
   assessment_change_treatment: string | null;
@@ -58,6 +59,7 @@ const ALL_SECTION_KEYS = [
   "patient_education",
   "improvement",
   "reassessment",
+  "antidepressant_augment",
   "trial",
   "assessment_initial_response",
   "assessment_change_treatment",
@@ -77,7 +79,9 @@ type SectionDraft = Record<SectionFieldKey, string>;
 
 const BASE_CATEGORY_SELECT =
   "id, short_code, name, description, diagnosis, treatment, patient_education, improvement, reassessment, trial";
-const EXTENDED_CATEGORY_SELECT = `${BASE_CATEGORY_SELECT}, assessment_initial_response, assessment_change_treatment, assessment_dose_optimization`;
+const ASSESSMENT_RESPONSE_SELECT =
+  "assessment_initial_response, assessment_change_treatment, assessment_dose_optimization";
+const ANTIDEPRESSANT_AUGMENT_SELECT = "antidepressant_augment";
 
 const isMissingAssessmentColumnError = (message?: string) =>
   [
@@ -85,6 +89,7 @@ const isMissingAssessmentColumnError = (message?: string) =>
     "assessment_change_treatment",
     "assessment_dose_optimization",
   ].some((column) => message?.includes(column));
+const isMissingAntidepressantAugmentColumnError = (message?: string) => message?.includes("antidepressant_augment");
 
 const createSectionDraft = (
   source?: Partial<Record<SectionFieldKey, string | null | undefined>>,
@@ -94,6 +99,7 @@ const createSectionDraft = (
   patient_education: sanitizeRichText(source?.patient_education),
   improvement: sanitizeRichText(source?.improvement),
   reassessment: sanitizeRichText(source?.reassessment),
+  antidepressant_augment: sanitizeRichText(source?.antidepressant_augment),
   trial: sanitizeRichText(source?.trial),
   assessment_initial_response: sanitizeRichText(source?.assessment_initial_response),
   assessment_change_treatment: sanitizeRichText(source?.assessment_change_treatment),
@@ -102,6 +108,7 @@ const createSectionDraft = (
 
 const ASSESSMENT_SECTION_FIELDS = [
   "reassessment",
+  "antidepressant_augment",
   "assessment_initial_response",
   "assessment_change_treatment",
   "assessment_dose_optimization",
@@ -113,10 +120,20 @@ const isAssessmentTab = (key: SectionKey) => key === "reassessment" || key === "
 
 const createAssessmentEditingState = (): Record<AssessmentSectionField, boolean> => ({
   reassessment: false,
+  antidepressant_augment: false,
   assessment_initial_response: false,
   assessment_change_treatment: false,
   assessment_dose_optimization: false,
 });
+
+const STRUCTURED_ASSESSMENT_FIELDS: AssessmentEditableField[] = [
+  "assessment_initial_response",
+  "assessment_change_treatment",
+  "assessment_dose_optimization",
+];
+
+const isStructuredAssessmentField = (field: AssessmentSectionField): field is AssessmentEditableField =>
+  STRUCTURED_ASSESSMENT_FIELDS.includes(field as AssessmentEditableField);
 
 const getSectionFromHash = (hash: string): SectionKey | null => {
   const normalized = hash.replace("#", "");
@@ -143,6 +160,7 @@ const CategoryDetail = () => {
   );
   const [savingAssessmentSection, setSavingAssessmentSection] = useState<AssessmentSectionField | null>(null);
   const [assessmentResponseFieldsAvailable, setAssessmentResponseFieldsAvailable] = useState(true);
+  const [antidepressantAugmentFieldAvailable, setAntidepressantAugmentFieldAvailable] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -161,41 +179,19 @@ const CategoryDetail = () => {
     const loadCategory = async () => {
       if (!id) return;
 
-      let categoryData: CategoryDetailRecord | null = null;
       let queryError: { message: string } | null = null;
       let nextAssessmentResponseFieldsAvailable = true;
+      let nextAntidepressantAugmentFieldAvailable = true;
 
-      const extendedResponse = await supabase
-        .from("categories")
-        .select(EXTENDED_CATEGORY_SELECT)
-        .eq("id", id)
-        .maybeSingle();
+      const [baseResponse, assessmentResponse, antidepressantAugmentResponse] = await Promise.all([
+        supabase.from("categories").select(BASE_CATEGORY_SELECT).eq("id", id).maybeSingle(),
+        supabase.from("categories").select(ASSESSMENT_RESPONSE_SELECT).eq("id", id).maybeSingle(),
+        supabase.from("categories").select(ANTIDEPRESSANT_AUGMENT_SELECT).eq("id", id).maybeSingle(),
+      ]);
 
-      if (extendedResponse.error && isMissingAssessmentColumnError(extendedResponse.error.message)) {
-        nextAssessmentResponseFieldsAvailable = false;
-
-        const fallbackResponse = await supabase
-          .from("categories")
-          .select(BASE_CATEGORY_SELECT)
-          .eq("id", id)
-          .maybeSingle();
-
-        queryError = fallbackResponse.error ? { message: fallbackResponse.error.message } : null;
-        categoryData = fallbackResponse.data
-          ? {
-              ...fallbackResponse.data,
-              assessment_initial_response: null,
-              assessment_change_treatment: null,
-              assessment_dose_optimization: null,
-            }
-          : null;
-      } else {
-        queryError = extendedResponse.error ? { message: extendedResponse.error.message } : null;
-        categoryData = extendedResponse.data as CategoryDetailRecord | null;
+      if (baseResponse.error) {
+        queryError = { message: baseResponse.error.message };
       }
-
-      if (!isMounted) return;
-      setAssessmentResponseFieldsAvailable(nextAssessmentResponseFieldsAvailable);
 
       if (queryError) {
         setError(queryError.message);
@@ -203,8 +199,48 @@ const CategoryDetail = () => {
         return;
       }
 
-      if (!categoryData) {
+      if (!baseResponse.data) {
         setCategory(null);
+        setLoading(false);
+        return;
+      }
+
+      const categoryData: CategoryDetailRecord = {
+        ...baseResponse.data,
+        antidepressant_augment: null,
+        assessment_initial_response: null,
+        assessment_change_treatment: null,
+        assessment_dose_optimization: null,
+      };
+
+      if (assessmentResponse.error) {
+        if (isMissingAssessmentColumnError(assessmentResponse.error.message)) {
+          nextAssessmentResponseFieldsAvailable = false;
+        } else {
+          queryError = { message: assessmentResponse.error.message };
+        }
+      } else if (assessmentResponse.data) {
+        categoryData.assessment_initial_response = assessmentResponse.data.assessment_initial_response ?? null;
+        categoryData.assessment_change_treatment = assessmentResponse.data.assessment_change_treatment ?? null;
+        categoryData.assessment_dose_optimization = assessmentResponse.data.assessment_dose_optimization ?? null;
+      }
+
+      if (antidepressantAugmentResponse.error) {
+        if (isMissingAntidepressantAugmentColumnError(antidepressantAugmentResponse.error.message)) {
+          nextAntidepressantAugmentFieldAvailable = false;
+        } else {
+          queryError = { message: antidepressantAugmentResponse.error.message };
+        }
+      } else if (antidepressantAugmentResponse.data) {
+        categoryData.antidepressant_augment = antidepressantAugmentResponse.data.antidepressant_augment ?? null;
+      }
+
+      if (!isMounted) return;
+      setAssessmentResponseFieldsAvailable(nextAssessmentResponseFieldsAvailable);
+      setAntidepressantAugmentFieldAvailable(nextAntidepressantAugmentFieldAvailable);
+
+      if (queryError) {
+        setError(queryError.message);
         setLoading(false);
         return;
       }
@@ -254,10 +290,14 @@ const CategoryDetail = () => {
       ? VISIBLE_SECTIONS[activeSectionIndex + 1]
       : null;
   const activeContentField = useMemo<SectionFieldKey>(
-    () => (activeTab === "antidepressant-augment" ? "reassessment" : activeTab),
+    () => (activeTab === "antidepressant-augment" ? "antidepressant_augment" : activeTab),
     [activeTab],
   );
   const activeContent = useMemo(() => sanitizeRichText(draft[activeContentField]), [activeContentField, draft]);
+  const activeAssessmentNotesField = useMemo<"reassessment" | "antidepressant_augment">(
+    () => (activeTab === "antidepressant-augment" ? "antidepressant_augment" : "reassessment"),
+    [activeTab],
+  );
   const activeContentHasValue = useMemo(() => richTextHasContent(activeContent), [activeContent]);
 
   useEffect(() => {
@@ -277,17 +317,24 @@ const CategoryDetail = () => {
   const handleSave = async () => {
     if (!category) return;
     const nextDraft = createSectionDraft(draft);
-    const payload = {
+    const payload: Partial<Record<SectionFieldKey, string | null>> = {
       diagnosis: toStoredRichText(nextDraft.diagnosis),
       treatment: toStoredRichText(nextDraft.treatment),
       patient_education: toStoredRichText(nextDraft.patient_education),
       improvement: toStoredRichText(nextDraft.improvement),
       reassessment: toStoredRichText(nextDraft.reassessment),
       trial: toStoredRichText(nextDraft.trial),
-      assessment_initial_response: toStoredRichText(nextDraft.assessment_initial_response),
-      assessment_change_treatment: toStoredRichText(nextDraft.assessment_change_treatment),
-      assessment_dose_optimization: toStoredRichText(nextDraft.assessment_dose_optimization),
     };
+
+    if (antidepressantAugmentFieldAvailable) {
+      payload.antidepressant_augment = toStoredRichText(nextDraft.antidepressant_augment);
+    }
+
+    if (assessmentResponseFieldsAvailable) {
+      payload.assessment_initial_response = toStoredRichText(nextDraft.assessment_initial_response);
+      payload.assessment_change_treatment = toStoredRichText(nextDraft.assessment_change_treatment);
+      payload.assessment_dose_optimization = toStoredRichText(nextDraft.assessment_dose_optimization);
+    }
 
     setSaving(true);
     const { error } = await supabase.from("categories").update(payload).eq("id", category.id);
@@ -300,10 +347,7 @@ const CategoryDetail = () => {
 
     toast.success("Category updated.");
     setDraft(nextDraft);
-    setCategory({
-      ...category,
-      ...payload,
-    });
+    setCategory((prev) => (prev ? { ...prev, ...payload } : prev));
     setEditing(false);
   };
 
@@ -356,19 +400,24 @@ const CategoryDetail = () => {
   };
 
   const handleAssessmentSectionStartEditing = (field: AssessmentSectionField) => {
-    if (field !== "reassessment" && !assessmentResponseFieldsAvailable) {
+    if (field === "antidepressant_augment" && !antidepressantAugmentFieldAvailable) {
+      toast.error("Run the latest antidepressant augment migration in Supabase to edit this section.");
+      return;
+    }
+
+    if (isStructuredAssessmentField(field) && !assessmentResponseFieldsAvailable) {
       toast.error("Run the latest assessment response migration in Supabase to edit this section.");
       return;
     }
 
     setDraft((prev) => {
-      if (field === "reassessment" || richTextHasContent(prev[field])) {
+      if (!isStructuredAssessmentField(field) || richTextHasContent(prev[field])) {
         return prev;
       }
 
       return {
         ...prev,
-        [field]: ASSESSMENT_FIELD_DEFAULTS[field as AssessmentEditableField],
+        [field]: ASSESSMENT_FIELD_DEFAULTS[field],
       };
     });
 
@@ -393,15 +442,20 @@ const CategoryDetail = () => {
 
   const handleAssessmentSectionSave = async (field: AssessmentSectionField) => {
     if (!category) return;
-    if (field !== "reassessment" && !assessmentResponseFieldsAvailable) {
+    if (field === "antidepressant_augment" && !antidepressantAugmentFieldAvailable) {
+      toast.error("Run the latest antidepressant augment migration in Supabase to save this section.");
+      return;
+    }
+
+    if (isStructuredAssessmentField(field) && !assessmentResponseFieldsAvailable) {
       toast.error("Run the latest assessment response migration in Supabase to save this section.");
       return;
     }
 
     let normalizedValue = sanitizeRichText(draft[field]);
 
-    if (field !== "reassessment" && !richTextHasContent(normalizedValue)) {
-      normalizedValue = ASSESSMENT_FIELD_DEFAULTS[field as AssessmentEditableField];
+    if (isStructuredAssessmentField(field) && !richTextHasContent(normalizedValue)) {
+      normalizedValue = ASSESSMENT_FIELD_DEFAULTS[field];
     }
 
     const payload = {
@@ -834,14 +888,15 @@ const CategoryDetail = () => {
               ) : isAssessmentTab(activeTab) ? (
                 <AssessmentOfResponse
                   notesSection={{
-                    content: draft.reassessment,
+                    content: draft[activeAssessmentNotesField],
                     canEdit,
-                    isEditing: editingAssessmentSections.reassessment,
-                    isSaving: savingAssessmentSection === "reassessment",
-                    onStartEditing: () => handleAssessmentSectionStartEditing("reassessment"),
-                    onCancelEditing: () => handleAssessmentSectionCancel("reassessment"),
-                    onSave: () => void handleAssessmentSectionSave("reassessment"),
-                    onContentChange: (value) => setDraft((prev) => ({ ...prev, reassessment: value })),
+                    isEditing: editingAssessmentSections[activeAssessmentNotesField],
+                    isSaving: savingAssessmentSection === activeAssessmentNotesField,
+                    onStartEditing: () => handleAssessmentSectionStartEditing(activeAssessmentNotesField),
+                    onCancelEditing: () => handleAssessmentSectionCancel(activeAssessmentNotesField),
+                    onSave: () => void handleAssessmentSectionSave(activeAssessmentNotesField),
+                    onContentChange: (value) =>
+                      setDraft((prev) => ({ ...prev, [activeAssessmentNotesField]: value })),
                   }}
                   initialResponseSection={{
                     content: draft.assessment_initial_response,

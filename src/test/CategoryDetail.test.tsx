@@ -32,15 +32,23 @@ const mockCategory = {
   patient_education: "<p>Patient education</p>",
   improvement: null,
   reassessment: "<p>Assessment notes</p>",
+  antidepressant_augment: "<p>Augment notes</p>",
   trial: null,
   assessment_initial_response: "<p>Initial response content</p>",
   assessment_change_treatment: "<p>Change treatment content</p>",
   assessment_dose_optimization: "<p>Dose optimization content</p>",
 };
 
+let updateMock: ReturnType<typeof vi.fn>;
+
 describe("CategoryDetail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    updateMock = vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({
+        error: null,
+      }),
+    }));
 
     vi.mocked(useAuth).mockReturnValue({
       user: null,
@@ -66,6 +74,7 @@ describe("CategoryDetail", () => {
             }),
           })),
         })),
+        update: updateMock,
       } as never;
     });
 
@@ -75,7 +84,7 @@ describe("CategoryDetail", () => {
     } as never);
   });
 
-  it("shows the Antidepressant Augment floating tab and reuses assessment content", async () => {
+  it("shows the Antidepressant Augment floating tab with separate content", async () => {
     render(
       <MemoryRouter initialEntries={["/category/category-1"]}>
         <UiPreferencesProvider>
@@ -100,6 +109,8 @@ describe("CategoryDetail", () => {
     });
 
     expect(screen.getByText("Additional assessment notes")).toBeInTheDocument();
+    expect(screen.getByText("Augment notes")).toBeInTheDocument();
+    expect(screen.queryByText("Assessment notes")).not.toBeInTheDocument();
     expect(screen.queryByText("Current response pattern")).not.toBeInTheDocument();
     expect(screen.queryByText("3.1.1")).not.toBeInTheDocument();
     expect(screen.queryByText("Assessment of initial response")).not.toBeInTheDocument();
@@ -152,6 +163,55 @@ describe("CategoryDetail", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("link", { name: "Assessment of Response" })).toHaveAttribute("aria-current", "page");
+    });
+  });
+
+  it("saves antidepressant augment notes without writing to reassessment", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      user: null,
+      profile: {
+        role: "super_admin",
+      },
+      loading: false,
+      session: null,
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      refreshProfile: vi.fn(),
+    } as never);
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/category/category-1"]}>
+        <UiPreferencesProvider>
+          <Routes>
+            <Route path="/category/:id" element={<CategoryDetail />} />
+          </Routes>
+        </UiPreferencesProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Depression" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: "Antidepressant Augment" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Antidepressant Augment" })).toHaveAttribute("aria-current", "page");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    const editor = container.querySelector('[contenteditable="true"]') as HTMLDivElement;
+    editor.innerHTML = "<p>Updated augment notes</p>";
+    fireEvent.input(editor);
+    fireEvent.blur(editor);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(updateMock).toHaveBeenCalledWith({
+        antidepressant_augment: "<p>Updated augment notes</p>",
+      });
     });
   });
 });
