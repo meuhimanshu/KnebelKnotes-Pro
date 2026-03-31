@@ -121,6 +121,7 @@ describe("InitiationOfTreatment", () => {
     });
 
     expect(screen.getByText("2.0")).toBeInTheDocument();
+    expect(screen.getByText("2.1")).toBeInTheDocument();
 
     const factorsHeading = screen.getByRole("heading", { name: "Factors to consider" });
     const lineSelectionHeading = screen.getByRole("heading", { name: "Select line of treatment" });

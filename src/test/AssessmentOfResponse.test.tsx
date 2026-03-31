@@ -33,6 +33,13 @@ describe("AssessmentOfResponse", () => {
     expect(screen.getByText("Antidepressant Switch")).toBeInTheDocument();
     expect(screen.getByText("Antidepressant Augment")).toBeInTheDocument();
 
+    const initialResponseHeading = screen.getByRole("heading", { name: "Assessment of initial response", level: 3 });
+    const switchHeading = screen.getByRole("heading", { name: "Antidepressant Switch", level: 3 });
+
+    expect(
+      initialResponseHeading.compareDocumentPosition(switchHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
     const scenarioSelect = screen.getByLabelText("Current response pattern");
 
     expect(screen.queryByText("Assess for change of treatment")).not.toBeInTheDocument();
@@ -43,6 +50,11 @@ describe("AssessmentOfResponse", () => {
     expect(screen.getByText("Increase dose (see Step 3.2)")).toBeInTheDocument();
     expect(screen.getByText("Table 3.2")).toBeInTheDocument();
     expect(screen.getByAltText("Table 3.2")).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("heading", { name: "Assess for change of treatment", level: 3 })
+        .compareDocumentPosition(switchHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open Table 3.2" }));
 
@@ -56,6 +68,10 @@ describe("AssessmentOfResponse", () => {
     expect(screen.getByText("After completing initial trial (6-8 weeks @ a therapeutic dose)...")).toBeInTheDocument();
     expect(screen.getByText("If <20% reduction of symptoms, go back to 3.1.2")).toBeInTheDocument();
     expect(screen.getByText("Optimize dose to maximize symptom reduction")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Dose optimization", level: 3 }).compareDocumentPosition(switchHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     fireEvent.change(scenarioSelect, { target: { value: "less_than_20" } });
 

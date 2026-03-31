@@ -205,50 +205,6 @@ const AssessmentOfResponse = ({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-[var(--card-shadow)] sm:p-5">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <div className="inline-flex rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                4.0
-              </div>
-              <h3 className="font-display text-lg font-semibold text-foreground sm:text-xl">
-                Antidepressant Switch
-              </h3>
-            </div>
-            {renderCardActions(antidepressantSwitchSection)}
-          </div>
-
-          {renderEditableCardContent(
-            antidepressantSwitchSection,
-            displayAntidepressantSwitchContent,
-            "Add antidepressant switch content...",
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-[var(--card-shadow)] sm:p-5">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="space-y-2">
-              <div className="inline-flex rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                5.0
-              </div>
-              <h3 className="font-display text-lg font-semibold text-foreground sm:text-xl">
-                Antidepressant Augment
-              </h3>
-            </div>
-            {renderCardActions(antidepressantAugmentSection)}
-          </div>
-
-          {renderEditableCardContent(
-            antidepressantAugmentSection,
-            displayAntidepressantAugmentContent,
-            "Add antidepressant augment content...",
-          )}
-        </div>
-      </div>
-
       {showChangeTreatmentStep && (
         <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-[var(--card-shadow)] sm:p-5">
           <div className="space-y-4">
@@ -318,6 +274,50 @@ const AssessmentOfResponse = ({
           </div>
         </div>
       )}
+
+      <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-[var(--card-shadow)] sm:p-5">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                4.0
+              </div>
+              <h3 className="font-display text-lg font-semibold text-foreground sm:text-xl">
+                Antidepressant Switch
+              </h3>
+            </div>
+            {renderCardActions(antidepressantSwitchSection)}
+          </div>
+
+          {renderEditableCardContent(
+            antidepressantSwitchSection,
+            displayAntidepressantSwitchContent,
+            "Add antidepressant switch content...",
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border/70 bg-card/60 p-4 shadow-[var(--card-shadow)] sm:p-5">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                5.0
+              </div>
+              <h3 className="font-display text-lg font-semibold text-foreground sm:text-xl">
+                Antidepressant Augment
+              </h3>
+            </div>
+            {renderCardActions(antidepressantAugmentSection)}
+          </div>
+
+          {renderEditableCardContent(
+            antidepressantAugmentSection,
+            displayAntidepressantAugmentContent,
+            "Add antidepressant augment content...",
+          )}
+        </div>
+      </div>
     </div>
   );
 };

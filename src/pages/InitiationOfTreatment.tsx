@@ -1228,6 +1228,9 @@ const InitiationOfTreatment = ({
                     <CardContent className="space-y-4 p-4 sm:p-6">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="space-y-1">
+                          <div className="inline-flex self-start rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                            2.1
+                          </div>
                           <div className="flex items-center gap-2">
                             <h2 className="font-display text-2xl font-semibold text-foreground">
                               Factors to consider
