@@ -275,7 +275,7 @@ describe("InitiationOfTreatment", () => {
     expect(scrollIntoViewMock).toHaveBeenCalled();
   });
 
-  it("shows a custom starting dose display when present", async () => {
+  it("shows custom dose display overrides when present", async () => {
     vi.mocked(useAuth).mockReturnValue({
       user: null,
       profile: null,
@@ -291,19 +291,21 @@ describe("InitiationOfTreatment", () => {
         {
           id: "drug-1",
           category_id: "category-1",
-          drug_name: "Aripiprazole",
+          drug_name: "Lithium",
           medication_type: "adjunctive",
           frequency: null,
-          tolerability_less: "↓ metabolic risk; ↓ sedating",
-          tolerability_more: "↑ akathisia; ↑ activating",
-          safety: null,
-          cost: "moderate",
-          line_of_treatment: 1,
-          initiation_dose_display: "1-2 mg",
-          initiation_dose_mg: 1,
-          therapeutic_min_dose_mg: 2,
-          therapeutic_max_dose_mg: 10,
-          max_dose_mg: 15,
+          tolerability_less: "anti-suicidal",
+          tolerability_more: "↑ weight gain; ↑ tremor; ↑ GI distress",
+          safety: "Lithium toxicity",
+          cost: "low",
+          line_of_treatment: 2,
+          initiation_dose_display: "300 mg",
+          therapeutic_range_display: "0.5-0.8 mmol/L",
+          max_dose_display: "1.0 mmol/L",
+          initiation_dose_mg: null,
+          therapeutic_min_dose_mg: null,
+          therapeutic_max_dose_mg: null,
+          max_dose_mg: null,
           updated_at: "2026-04-08T12:00:00.000Z",
           is_active: true,
         },
@@ -321,20 +323,26 @@ describe("InitiationOfTreatment", () => {
       expect(screen.getByText("Initiation of Treatment")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Line 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Line 2" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Select medication Aripiprazole" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Select medication Lithium" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Select medication Aripiprazole" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select medication Lithium" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox")).toHaveTextContent("Aripiprazole");
+      expect(screen.getByRole("combobox")).toHaveTextContent("Lithium");
     });
 
     expect(
-      screen.getByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "1-2 mg"),
+      screen.getByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "300 mg"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "0.5-0.8 mmol/L"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "1.0 mmol/L"),
     ).toBeInTheDocument();
   });
 
@@ -578,7 +586,7 @@ describe("InitiationOfTreatment", () => {
     fireEvent.click(screen.getByRole("button", { name: "Line 1" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Add medication to Line 1" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add medication to Line 1 Treatment ( Monotherapy )" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Delete Sertraline" })).toBeInTheDocument();
     });
 
@@ -910,6 +918,10 @@ describe("InitiationOfTreatment", () => {
       .mockResolvedValueOnce({
         data: null,
         error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: [],
+        error: null,
       } as never);
 
     render(
@@ -928,17 +940,28 @@ describe("InitiationOfTreatment", () => {
       expect(screen.getByText("Propose new medication")).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Drug name"), {
+    const dialog = screen.getByRole("dialog");
+    const drugNameInput = within(dialog).getByLabelText("Drug name") as HTMLInputElement;
+    const changeReasonInput = within(dialog).getByLabelText("Change reason") as HTMLTextAreaElement;
+
+    fireEvent.change(drugNameInput, {
       target: { value: "Testoxetine" },
     });
-    fireEvent.change(screen.getByLabelText("Change reason"), {
+    fireEvent.change(changeReasonInput, {
       target: { value: "Add a reviewed option for line 1 treatment." },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit for approval" }));
+    expect(drugNameInput.value).toBe("Testoxetine");
+    expect(changeReasonInput.value).toBe("Add a reviewed option for line 1 treatment.");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit for approval" }));
 
     await waitFor(() => {
-      expect(supabase.rpc).toHaveBeenNthCalledWith(2, "submit_antidepressant_pending_add", {
+      const submitCall = vi
+        .mocked(supabase.rpc)
+        .mock.calls.find(([rpcName]) => rpcName === "submit_antidepressant_pending_add");
+
+      expect(submitCall).toEqual(["submit_antidepressant_pending_add", {
         p_category_id: "category-1",
         p_drug_name: "Testoxetine",
         p_medication_type: "monotherapy",
@@ -949,12 +972,14 @@ describe("InitiationOfTreatment", () => {
         p_cost: null,
         p_line_of_treatment: 1,
         p_initiation_dose_display: null,
+        p_therapeutic_range_display: null,
+        p_max_dose_display: null,
         p_initiation_dose_mg: null,
         p_therapeutic_min_dose_mg: null,
         p_therapeutic_max_dose_mg: null,
         p_max_dose_mg: null,
         p_change_reason: "Add a reviewed option for line 1 treatment.",
-      });
+      }]);
     });
   });
 
@@ -1010,24 +1035,26 @@ describe("InitiationOfTreatment", () => {
         error: null,
       } as never)
       .mockResolvedValueOnce({
-        data: {
-          id: "drug-new",
-          category_id: "category-1",
-          drug_name: "Testoxetine",
-          medication_type: "monotherapy",
-          frequency: "daily",
-          tolerability_less: null,
-          tolerability_more: "↑ nausea",
-          safety: "↓ drug interaction",
-          cost: "Low",
-          line_of_treatment: 1,
-          initiation_dose_mg: 10,
-          therapeutic_min_dose_mg: 20,
-          therapeutic_max_dose_mg: 40,
-          max_dose_mg: 60,
-          updated_at: "2026-03-30T18:05:00.000Z",
-          is_active: true,
-        },
+        data: [
+          {
+            id: "drug-new",
+            category_id: "category-1",
+            drug_name: "Testoxetine",
+            medication_type: "monotherapy",
+            frequency: "daily",
+            tolerability_less: null,
+            tolerability_more: "↑ nausea",
+            safety: "↓ drug interaction",
+            cost: "Low",
+            line_of_treatment: 1,
+            initiation_dose_mg: 10,
+            therapeutic_min_dose_mg: 20,
+            therapeutic_max_dose_mg: 40,
+            max_dose_mg: 60,
+            updated_at: "2026-03-30T18:05:00.000Z",
+            is_active: true,
+          },
+        ],
         error: null,
       } as never)
       .mockResolvedValueOnce({
@@ -1081,6 +1108,14 @@ describe("InitiationOfTreatment", () => {
         p_pending_edit_id: "pending-add",
         p_review_note: null,
       });
+    });
+
+    await waitFor(() => {
+      const refreshedRowCalls = vi
+        .mocked(supabase.rpc)
+        .mock.calls.filter(([rpcName]) => rpcName === "get_category_treatment_rows");
+
+      expect(refreshedRowCalls.length).toBeGreaterThanOrEqual(2);
     });
 
     const stepsTab = screen.getByRole("tab", { name: "Treatment Steps" });

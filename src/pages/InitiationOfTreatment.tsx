@@ -63,6 +63,8 @@ type AntidepressantMasterRow = {
   cost: string | null;
   line_of_treatment: number;
   initiation_dose_display: string | null;
+  therapeutic_range_display: string | null;
+  max_dose_display: string | null;
   initiation_dose_mg: number | null;
   therapeutic_min_dose_mg: number | null;
   therapeutic_max_dose_mg: number | null;
@@ -82,6 +84,8 @@ type AntidepressantSnapshot = Pick<
   | "cost"
   | "line_of_treatment"
   | "initiation_dose_display"
+  | "therapeutic_range_display"
+  | "max_dose_display"
   | "initiation_dose_mg"
   | "therapeutic_min_dose_mg"
   | "therapeutic_max_dose_mg"
@@ -129,6 +133,8 @@ type EditFormState = {
   cost: string;
   line_of_treatment: string;
   initiation_dose_display: string;
+  therapeutic_range_display: string;
+  max_dose_display: string;
   initiation_dose_mg: string;
   therapeutic_min_dose_mg: string;
   therapeutic_max_dose_mg: string;
@@ -188,6 +194,8 @@ const editSchema = z
     cost: optionalTextField,
     line_of_treatment: z.coerce.number().int().min(1, "Line must be 1, 2, or 3.").max(3, "Line must be 1, 2, or 3."),
     initiation_dose_display: optionalTextField,
+    therapeutic_range_display: optionalTextField,
+    max_dose_display: optionalTextField,
     initiation_dose_mg: optionalDoseField,
     therapeutic_min_dose_mg: optionalDoseField,
     therapeutic_max_dose_mg: optionalDoseField,
@@ -255,6 +263,8 @@ const AUDITED_FIELDS: Array<{ key: keyof AntidepressantSnapshot; label: string }
   { key: "cost", label: "Cost" },
   { key: "line_of_treatment", label: "Line of treatment" },
   { key: "initiation_dose_display", label: "Starting dose display" },
+  { key: "therapeutic_range_display", label: "Therapeutic range display" },
+  { key: "max_dose_display", label: "Max dose display" },
   { key: "initiation_dose_mg", label: "Initiation dose" },
   { key: "therapeutic_min_dose_mg", label: "Therapeutic minimum dose" },
   { key: "therapeutic_max_dose_mg", label: "Therapeutic maximum dose" },
@@ -277,6 +287,8 @@ const emptyForm: EditFormState = {
   cost: "",
   line_of_treatment: "1",
   initiation_dose_display: "",
+  therapeutic_range_display: "",
+  max_dose_display: "",
   initiation_dose_mg: "",
   therapeutic_min_dose_mg: "",
   therapeutic_max_dose_mg: "",
@@ -300,6 +312,33 @@ const getTreatmentTableEmptyMessage = (kind: TreatmentTableKind) =>
 const getDefaultMedicationTypeForTable = (kind: TreatmentTableKind) =>
   kind === "monotherapy" ? MONOTHERAPY_MEDICATION_TYPE : "adjunctive";
 
+const normalizeLineOfTreatmentInput = (value: unknown, fallback = emptyForm.line_of_treatment): string => {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return /^[1-3]$/.test(trimmed) ? trimmed : fallback;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as {
+      value?: unknown;
+      target?: { value?: unknown };
+      currentTarget?: { value?: unknown };
+      detail?: { value?: unknown };
+    };
+
+    return normalizeLineOfTreatmentInput(
+      record.value ?? record.target?.value ?? record.currentTarget?.value ?? record.detail?.value,
+      fallback,
+    );
+  }
+
+  return fallback;
+};
+
 const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
   drug_name: row.drug_name,
   medication_type: row.medication_type,
@@ -310,6 +349,8 @@ const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
   cost: row.cost ?? "",
   line_of_treatment: String(row.line_of_treatment),
   initiation_dose_display: row.initiation_dose_display ?? "",
+  therapeutic_range_display: row.therapeutic_range_display ?? "",
+  max_dose_display: row.max_dose_display ?? "",
   initiation_dose_mg: row.initiation_dose_mg === null ? "" : String(row.initiation_dose_mg),
   therapeutic_min_dose_mg: row.therapeutic_min_dose_mg === null ? "" : String(row.therapeutic_min_dose_mg),
   therapeutic_max_dose_mg: row.therapeutic_max_dose_mg === null ? "" : String(row.therapeutic_max_dose_mg),
@@ -338,6 +379,8 @@ const normalizeTreatmentModuleError = (message: string) => {
       "antidepressant_master.safety",
       "antidepressant_master.cost",
       "antidepressant_master.initiation_dose_display",
+      "antidepressant_master.therapeutic_range_display",
+      "antidepressant_master.max_dose_display",
       "pending_antidepressant_edits.category_id",
     ].some((name) => message.includes(name));
   const hasSchemaCacheMiss =
@@ -413,6 +456,10 @@ const formatSnapshotValue = (
     return value;
   }
 
+  if (key === "therapeutic_range_display" || key === "max_dose_display") {
+    return value;
+  }
+
   if (key === "tolerability_less" || key === "tolerability_more" || key === "safety" || key === "cost") {
     return value;
   }
@@ -436,6 +483,8 @@ const formatMedicationType = (value: string | null | undefined) => {
   return value.replace(/_/g, " ");
 };
 
+const hasDoseDisplayValue = (value: string | null | undefined) => value !== null && value !== undefined && value.trim() !== "";
+
 const formatDoseCellValue = (value: number | null) => (value === null ? "Not set" : formatDoseMg(value));
 
 const formatDoseRangeValue = (min: number | null, max: number | null) =>
@@ -444,11 +493,32 @@ const formatDoseRangeValue = (min: number | null, max: number | null) =>
 const formatStartingDoseValue = (
   row: Pick<AntidepressantMasterRow, "initiation_dose_display" | "initiation_dose_mg">,
 ) => {
-  if (row.initiation_dose_display && row.initiation_dose_display.trim() !== "") {
+  if (hasDoseDisplayValue(row.initiation_dose_display)) {
     return row.initiation_dose_display;
   }
 
   return formatDoseCellValue(row.initiation_dose_mg);
+};
+
+const formatTherapeuticRangeCardValue = (
+  row: Pick<
+    AntidepressantMasterRow,
+    "therapeutic_range_display" | "therapeutic_min_dose_mg" | "therapeutic_max_dose_mg"
+  >,
+) => {
+  if (hasDoseDisplayValue(row.therapeutic_range_display)) {
+    return row.therapeutic_range_display;
+  }
+
+  return formatDoseRangeValue(row.therapeutic_min_dose_mg, row.therapeutic_max_dose_mg);
+};
+
+const formatMaxDoseCardValue = (row: Pick<AntidepressantMasterRow, "max_dose_display" | "max_dose_mg">) => {
+  if (hasDoseDisplayValue(row.max_dose_display)) {
+    return row.max_dose_display;
+  }
+
+  return formatDoseCellValue(row.max_dose_mg);
 };
 
 const formatTextCellValue = (value: string | null | undefined) =>
@@ -645,7 +715,7 @@ const InitiationOfTreatment = ({
       setRowsError(normalizeTreatmentModuleError(error.message));
       setRows([]);
     } else {
-      setRows((data as AntidepressantMasterRow[] | null) ?? []);
+      setRows(Array.isArray(data) ? (data as AntidepressantMasterRow[]) : []);
       setRowsError(null);
     }
 
@@ -944,7 +1014,14 @@ const InitiationOfTreatment = ({
       return;
     }
 
-    const parsed = editSchema.safeParse(form);
+    const normalizedForm = {
+      ...form,
+      line_of_treatment: normalizeLineOfTreatmentInput(
+        form.line_of_treatment,
+        selectedRow ? String(selectedRow.line_of_treatment) : emptyForm.line_of_treatment,
+      ),
+    };
+    const parsed = editSchema.safeParse(normalizedForm);
     if (!parsed.success) {
       const nextErrors: Partial<Record<keyof EditFormState, string>> = {};
       parsed.error.issues.forEach((issue) => {
@@ -977,6 +1054,8 @@ const InitiationOfTreatment = ({
           p_cost: parsed.data.cost,
           p_line_of_treatment: parsed.data.line_of_treatment,
           p_initiation_dose_display: parsed.data.initiation_dose_display,
+          p_therapeutic_range_display: parsed.data.therapeutic_range_display,
+          p_max_dose_display: parsed.data.max_dose_display,
           p_initiation_dose_mg: parsed.data.initiation_dose_mg,
           p_therapeutic_min_dose_mg: parsed.data.therapeutic_min_dose_mg,
           p_therapeutic_max_dose_mg: parsed.data.therapeutic_max_dose_mg,
@@ -994,6 +1073,8 @@ const InitiationOfTreatment = ({
           p_cost: parsed.data.cost,
           p_line_of_treatment: parsed.data.line_of_treatment,
           p_initiation_dose_display: parsed.data.initiation_dose_display,
+          p_therapeutic_range_display: parsed.data.therapeutic_range_display,
+          p_max_dose_display: parsed.data.max_dose_display,
           p_initiation_dose_mg: parsed.data.initiation_dose_mg,
           p_therapeutic_min_dose_mg: parsed.data.therapeutic_min_dose_mg,
           p_therapeutic_max_dose_mg: parsed.data.therapeutic_max_dose_mg,
@@ -1618,16 +1699,13 @@ const InitiationOfTreatment = ({
                                 <div className="rounded-xl border border-border/70 bg-background/70 p-4">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Therapeutic range</p>
                                   <p className="mt-2 text-sm text-foreground">
-                                    {formatDoseRangeValue(
-                                      selectedMedication.therapeutic_min_dose_mg,
-                                      selectedMedication.therapeutic_max_dose_mg,
-                                    )}
+                                    {formatTherapeuticRangeCardValue(selectedMedication)}
                                   </p>
                                 </div>
                                 <div className="rounded-xl border border-border/70 bg-background/70 p-4">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Max dose / 24hrs</p>
                                   <p className="mt-2 text-sm text-foreground">
-                                    {formatDoseCellValue(selectedMedication.max_dose_mg)}
+                                    {formatMaxDoseCardValue(selectedMedication)}
                                   </p>
                                 </div>
                               </div>
@@ -2018,7 +2096,12 @@ const InitiationOfTreatment = ({
               <Label>Line of treatment</Label>
               <Select
                 value={form.line_of_treatment}
-                onValueChange={(value) => setForm((prev) => ({ ...prev, line_of_treatment: value }))}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    line_of_treatment: normalizeLineOfTreatmentInput(value, prev.line_of_treatment),
+                  }))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select line" />
@@ -2047,7 +2130,35 @@ const InitiationOfTreatment = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="initiation_dose_mg">Initiation dose (mg)</Label>
+              <Label htmlFor="therapeutic_range_display">Therapeutic range display</Label>
+              <Input
+                id="therapeutic_range_display"
+                value={form.therapeutic_range_display}
+                onChange={(event) => setForm((prev) => ({ ...prev, therapeutic_range_display: event.target.value }))}
+                placeholder="Example: 0.5-0.8 mmol/L"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Use this when the therapeutic range should display with custom units or text.
+              </p>
+              {formErrors.therapeutic_range_display && <p className="text-sm text-destructive">{formErrors.therapeutic_range_display}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max_dose_display">Max dose display</Label>
+              <Input
+                id="max_dose_display"
+                value={form.max_dose_display}
+                onChange={(event) => setForm((prev) => ({ ...prev, max_dose_display: event.target.value }))}
+                placeholder="Example: 1.0 mmol/L"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Use this when the max dose should display with custom units or text.
+              </p>
+              {formErrors.max_dose_display && <p className="text-sm text-destructive">{formErrors.max_dose_display}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="initiation_dose_mg">Initiation dose numeric value</Label>
               <Input
                 id="initiation_dose_mg"
                 type="number"
@@ -2060,7 +2171,7 @@ const InitiationOfTreatment = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="therapeutic_min_dose_mg">Therapeutic minimum (mg)</Label>
+              <Label htmlFor="therapeutic_min_dose_mg">Therapeutic minimum numeric value</Label>
               <Input
                 id="therapeutic_min_dose_mg"
                 type="number"
@@ -2073,7 +2184,7 @@ const InitiationOfTreatment = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="therapeutic_max_dose_mg">Therapeutic maximum (mg)</Label>
+              <Label htmlFor="therapeutic_max_dose_mg">Therapeutic maximum numeric value</Label>
               <Input
                 id="therapeutic_max_dose_mg"
                 type="number"
@@ -2086,7 +2197,7 @@ const InitiationOfTreatment = ({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="max_dose_mg">Maximum dose (mg)</Label>
+              <Label htmlFor="max_dose_mg">Maximum dose numeric value</Label>
               <Input
                 id="max_dose_mg"
                 type="number"
@@ -2100,7 +2211,8 @@ const InitiationOfTreatment = ({
 
             <div className="sm:col-span-2">
               <p className="text-xs text-muted-foreground">
-                Leave all four dose fields blank if numeric initiation and therapeutic guidance are not available yet.
+                Leave all four numeric dose fields blank if the regimen uses mixed units or does not have comparable numeric
+                dose guidance. In those cases, use the display fields above instead.
               </p>
             </div>
 
