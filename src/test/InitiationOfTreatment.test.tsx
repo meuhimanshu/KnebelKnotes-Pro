@@ -138,6 +138,9 @@ describe("InitiationOfTreatment", () => {
       expect(screen.getByText("Sertraline")).toBeInTheDocument();
     });
 
+    expect(screen.getByRole("heading", { name: "Line 1 Treatment ( Monotherapy )" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Line 1 Treatment ( Adjunctive )" })).toBeInTheDocument();
+    expect(screen.getByText("No adjunctive medications are configured for this treatment line yet.")).toBeInTheDocument();
     expect(screen.queryByText("Approve + direct edit access")).not.toBeInTheDocument();
     expect(screen.getByText("Select line of treatment")).toBeInTheDocument();
     expect(screen.getByText("2.2")).toBeInTheDocument();
@@ -146,7 +149,8 @@ describe("InitiationOfTreatment", () => {
     expect(screen.getByText("Factors to consider")).toBeInTheDocument();
     expect(screen.getByText("Pick a starting dose and titration schedule")).toBeInTheDocument();
     expect(screen.getByText("Patient education")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse medication table" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Line 1 Treatment ( Monotherapy )" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Line 1 Treatment ( Adjunctive )" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Log in to make changes" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Updated" })).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Therapeutic Range" })).not.toBeInTheDocument();
@@ -269,6 +273,69 @@ describe("InitiationOfTreatment", () => {
       screen.queryByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "Frequency"),
     ).not.toBeInTheDocument();
     expect(scrollIntoViewMock).toHaveBeenCalled();
+  });
+
+  it("shows a custom starting dose display when present", async () => {
+    vi.mocked(useAuth).mockReturnValue({
+      user: null,
+      profile: null,
+      loading: false,
+      session: null,
+      signIn: vi.fn(),
+      signOut: vi.fn(),
+      refreshProfile: vi.fn(),
+    });
+
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: [
+        {
+          id: "drug-1",
+          category_id: "category-1",
+          drug_name: "Aripiprazole",
+          medication_type: "adjunctive",
+          frequency: null,
+          tolerability_less: "↓ metabolic risk; ↓ sedating",
+          tolerability_more: "↑ akathisia; ↑ activating",
+          safety: null,
+          cost: "moderate",
+          line_of_treatment: 1,
+          initiation_dose_display: "1-2 mg",
+          initiation_dose_mg: 1,
+          therapeutic_min_dose_mg: 2,
+          therapeutic_max_dose_mg: 10,
+          max_dose_mg: 15,
+          updated_at: "2026-04-08T12:00:00.000Z",
+          is_active: true,
+        },
+      ],
+      error: null,
+    } as never);
+
+    render(
+      <MemoryRouter>
+        <InitiationOfTreatment categoryId="category-1" categoryName="Depression" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Initiation of Treatment")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Line 1" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Select medication Aripiprazole" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Select medication Aripiprazole" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox")).toHaveTextContent("Aripiprazole");
+    });
+
+    expect(
+      screen.getByText((content, element) => element?.tagName.toLowerCase() === "p" && content === "1-2 mg"),
+    ).toBeInTheDocument();
   });
 
   it("shows one shared titration schedule editor for the category after a medication is selected", async () => {
@@ -881,6 +948,7 @@ describe("InitiationOfTreatment", () => {
         p_safety: null,
         p_cost: null,
         p_line_of_treatment: 1,
+        p_initiation_dose_display: null,
         p_initiation_dose_mg: null,
         p_therapeutic_min_dose_mg: null,
         p_therapeutic_max_dose_mg: null,

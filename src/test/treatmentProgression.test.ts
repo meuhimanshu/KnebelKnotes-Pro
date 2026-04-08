@@ -16,15 +16,31 @@ const sertraline = {
   max_dose_mg: 200,
 };
 
+const brexpiprazole = {
+  drug_name: "Brexpiprazole",
+  line_of_treatment: 1,
+  initiation_dose_mg: 0.5,
+  therapeutic_min_dose_mg: 0.5,
+  therapeutic_max_dose_mg: 2,
+  max_dose_mg: 3,
+};
+
 describe("treatment progression helpers", () => {
-  it("formats dose values as integers with mg suffix", () => {
+  it("formats dose values with mg suffix", () => {
     expect(formatDoseMg(25)).toBe("25 mg");
     expect(formatDoseRangeMg(50, 200)).toBe("50-200 mg");
+    expect(formatDoseMg(0.5)).toBe("0.5 mg");
+    expect(formatDoseRangeMg(0.5, 2)).toBe("0.5-2 mg");
   });
 
   it("infers a dose step and generates dropdown options", () => {
     expect(inferDoseStepMg(sertraline)).toBe(25);
     expect(buildDoseOptionsMg(sertraline)).toEqual([0, 25, 50, 75, 100, 125, 150, 175, 200]);
+  });
+
+  it("supports decimal dose steps", () => {
+    expect(inferDoseStepMg(brexpiprazole)).toBe(0.5);
+    expect(buildDoseOptionsMg(brexpiprazole)).toEqual([0, 0.5, 1, 1.5, 2, 2.5, 3]);
   });
 
   it("recommends titration when the dose is below therapeutic range", () => {

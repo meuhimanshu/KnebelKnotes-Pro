@@ -62,6 +62,7 @@ type AntidepressantMasterRow = {
   safety: string | null;
   cost: string | null;
   line_of_treatment: number;
+  initiation_dose_display: string | null;
   initiation_dose_mg: number | null;
   therapeutic_min_dose_mg: number | null;
   therapeutic_max_dose_mg: number | null;
@@ -80,6 +81,7 @@ type AntidepressantSnapshot = Pick<
   | "safety"
   | "cost"
   | "line_of_treatment"
+  | "initiation_dose_display"
   | "initiation_dose_mg"
   | "therapeutic_min_dose_mg"
   | "therapeutic_max_dose_mg"
@@ -126,6 +128,7 @@ type EditFormState = {
   safety: string;
   cost: string;
   line_of_treatment: string;
+  initiation_dose_display: string;
   initiation_dose_mg: string;
   therapeutic_min_dose_mg: string;
   therapeutic_max_dose_mg: string;
@@ -146,7 +149,7 @@ const optionalDoseField = z.preprocess((value) => {
 
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isNaN(numericValue) ? value : numericValue;
-}, z.number().int("Use a whole-number dose.").min(0, "Use a non-negative integer dose.").nullable());
+}, z.number().min(0, "Use a non-negative dose.").nullable());
 
 const optionalTextField = z.preprocess((value) => {
   if (value === "" || value === null || value === undefined) {
@@ -184,6 +187,7 @@ const editSchema = z
     safety: optionalNotesField,
     cost: optionalTextField,
     line_of_treatment: z.coerce.number().int().min(1, "Line must be 1, 2, or 3.").max(3, "Line must be 1, 2, or 3."),
+    initiation_dose_display: optionalTextField,
     initiation_dose_mg: optionalDoseField,
     therapeutic_min_dose_mg: optionalDoseField,
     therapeutic_max_dose_mg: optionalDoseField,
@@ -250,6 +254,7 @@ const AUDITED_FIELDS: Array<{ key: keyof AntidepressantSnapshot; label: string }
   { key: "safety", label: "Safety" },
   { key: "cost", label: "Cost" },
   { key: "line_of_treatment", label: "Line of treatment" },
+  { key: "initiation_dose_display", label: "Starting dose display" },
   { key: "initiation_dose_mg", label: "Initiation dose" },
   { key: "therapeutic_min_dose_mg", label: "Therapeutic minimum dose" },
   { key: "therapeutic_max_dose_mg", label: "Therapeutic maximum dose" },
@@ -258,6 +263,9 @@ const AUDITED_FIELDS: Array<{ key: keyof AntidepressantSnapshot; label: string }
 ];
 
 const TREATMENT_LINES = [1, 2, 3] as const;
+const MONOTHERAPY_MEDICATION_TYPE = "monotherapy";
+
+type TreatmentTableKind = "monotherapy" | "adjunctive";
 
 const emptyForm: EditFormState = {
   drug_name: "",
@@ -268,12 +276,29 @@ const emptyForm: EditFormState = {
   safety: "",
   cost: "",
   line_of_treatment: "1",
+  initiation_dose_display: "",
   initiation_dose_mg: "",
   therapeutic_min_dose_mg: "",
   therapeutic_max_dose_mg: "",
   max_dose_mg: "",
   change_reason: "",
 };
+
+const normalizeMedicationType = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
+
+const isMonotherapyMedication = (row: Pick<AntidepressantMasterRow, "medication_type">) =>
+  normalizeMedicationType(row.medication_type) === MONOTHERAPY_MEDICATION_TYPE;
+
+const getTreatmentTableTitle = (line: string, kind: TreatmentTableKind) =>
+  kind === "monotherapy" ? `Line ${line} Treatment ( Monotherapy )` : `Line ${line} Treatment ( Adjunctive )`;
+
+const getTreatmentTableEmptyMessage = (kind: TreatmentTableKind) =>
+  kind === "monotherapy"
+    ? "No monotherapy medications are configured for this treatment line yet."
+    : "No adjunctive medications are configured for this treatment line yet.";
+
+const getDefaultMedicationTypeForTable = (kind: TreatmentTableKind) =>
+  kind === "monotherapy" ? MONOTHERAPY_MEDICATION_TYPE : "adjunctive";
 
 const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
   drug_name: row.drug_name,
@@ -284,6 +309,7 @@ const toEditForm = (row: AntidepressantMasterRow): EditFormState => ({
   safety: row.safety ?? "",
   cost: row.cost ?? "",
   line_of_treatment: String(row.line_of_treatment),
+  initiation_dose_display: row.initiation_dose_display ?? "",
   initiation_dose_mg: row.initiation_dose_mg === null ? "" : String(row.initiation_dose_mg),
   therapeutic_min_dose_mg: row.therapeutic_min_dose_mg === null ? "" : String(row.therapeutic_min_dose_mg),
   therapeutic_max_dose_mg: row.therapeutic_max_dose_mg === null ? "" : String(row.therapeutic_max_dose_mg),
@@ -311,6 +337,7 @@ const normalizeTreatmentModuleError = (message: string) => {
       "antidepressant_master.tolerability_more",
       "antidepressant_master.safety",
       "antidepressant_master.cost",
+      "antidepressant_master.initiation_dose_display",
       "pending_antidepressant_edits.category_id",
     ].some((name) => message.includes(name));
   const hasSchemaCacheMiss =
@@ -382,6 +409,10 @@ const formatSnapshotValue = (
     return value;
   }
 
+  if (key === "initiation_dose_display") {
+    return value;
+  }
+
   if (key === "tolerability_less" || key === "tolerability_more" || key === "safety" || key === "cost") {
     return value;
   }
@@ -397,14 +428,31 @@ const formatSnapshotValue = (
   return formatDoseMg(value as number);
 };
 
-const formatMedicationType = (value: string) => value.replace(/_/g, " ");
+const formatMedicationType = (value: string | null | undefined) => {
+  if (!value || value.trim() === "") {
+    return "Not set";
+  }
+
+  return value.replace(/_/g, " ");
+};
 
 const formatDoseCellValue = (value: number | null) => (value === null ? "Not set" : formatDoseMg(value));
 
 const formatDoseRangeValue = (min: number | null, max: number | null) =>
   min === null || max === null ? "Not set" : formatDoseRangeMg(min, max);
 
-const formatTextCellValue = (value: string | null) => (value === null || value.trim() === "" ? "Not set" : value);
+const formatStartingDoseValue = (
+  row: Pick<AntidepressantMasterRow, "initiation_dose_display" | "initiation_dose_mg">,
+) => {
+  if (row.initiation_dose_display && row.initiation_dose_display.trim() !== "") {
+    return row.initiation_dose_display;
+  }
+
+  return formatDoseCellValue(row.initiation_dose_mg);
+};
+
+const formatTextCellValue = (value: string | null | undefined) =>
+  value === null || value === undefined || value.trim() === "" ? "Not set" : value;
 
 const renderClinicalArrow = (value: string) => (
   <span aria-hidden="true" className="inline-block text-[1rem] font-semibold leading-none align-[-0.08em]">
@@ -456,8 +504,8 @@ const renderClinicalList = (value: string | null, tone: "less" | "more" | "safet
   return <div className="flex flex-col items-start gap-1.5">{items.map((item) => renderClinicalItem(item, tone))}</div>;
 };
 
-const renderCostValue = (value: string | null) => {
-  if (value === null || value.trim() === "") {
+const renderCostValue = (value: string | null | undefined) => {
+  if (value === null || value === undefined || value.trim() === "") {
     return <span className="text-sm text-muted-foreground">Not set</span>;
   }
 
@@ -565,7 +613,10 @@ const InitiationOfTreatment = ({
   const [queueCleanupSaving, setQueueCleanupSaving] = useState(false);
   const [selectedLine, setSelectedLine] = useState("");
   const [selectedMedicationId, setSelectedMedicationId] = useState("");
-  const [isLineTableCollapsed, setIsLineTableCollapsed] = useState(false);
+  const [collapsedTables, setCollapsedTables] = useState<Record<TreatmentTableKind, boolean>>({
+    monotherapy: false,
+    adjunctive: false,
+  });
   const medicationSelectionSectionRef = useRef<HTMLElement | null>(null);
 
   const canApprove = profile?.role === "super_admin";
@@ -720,6 +771,16 @@ const InitiationOfTreatment = ({
     return groupedRows[Number(selectedLine)] ?? [];
   }, [groupedRows, selectedLine]);
 
+  const selectedLineMonotherapyRows = useMemo(
+    () => selectedLineRows.filter((row) => isMonotherapyMedication(row)),
+    [selectedLineRows],
+  );
+
+  const selectedLineAdjunctiveRows = useMemo(
+    () => selectedLineRows.filter((row) => !isMonotherapyMedication(row)),
+    [selectedLineRows],
+  );
+
   const selectedMedication = useMemo(
     () => selectedLineRows.find((row) => row.id === selectedMedicationId) ?? null,
     [selectedLineRows, selectedMedicationId],
@@ -737,7 +798,10 @@ const InitiationOfTreatment = ({
   const handleLineChange = (value: string) => {
     setSelectedLine(value);
     setSelectedMedicationId("");
-    setIsLineTableCollapsed(false);
+    setCollapsedTables({
+      monotherapy: false,
+      adjunctive: false,
+    });
   };
 
   const handleMedicationSelection = useCallback((value: string, shouldScroll = false) => {
@@ -762,7 +826,7 @@ const InitiationOfTreatment = ({
     setEditOpen(true);
   };
 
-  const openCreateDialog = (line?: number) => {
+  const openCreateDialog = (line?: number, medicationType = emptyForm.medication_type) => {
     if (!canEditRows) {
       return;
     }
@@ -771,6 +835,7 @@ const InitiationOfTreatment = ({
     setForm({
       ...emptyForm,
       line_of_treatment: line ? String(line) : emptyForm.line_of_treatment,
+      medication_type: medicationType,
     });
     setFormErrors({});
     setEditOpen(true);
@@ -911,6 +976,7 @@ const InitiationOfTreatment = ({
           p_safety: parsed.data.safety,
           p_cost: parsed.data.cost,
           p_line_of_treatment: parsed.data.line_of_treatment,
+          p_initiation_dose_display: parsed.data.initiation_dose_display,
           p_initiation_dose_mg: parsed.data.initiation_dose_mg,
           p_therapeutic_min_dose_mg: parsed.data.therapeutic_min_dose_mg,
           p_therapeutic_max_dose_mg: parsed.data.therapeutic_max_dose_mg,
@@ -927,6 +993,7 @@ const InitiationOfTreatment = ({
           p_safety: parsed.data.safety,
           p_cost: parsed.data.cost,
           p_line_of_treatment: parsed.data.line_of_treatment,
+          p_initiation_dose_display: parsed.data.initiation_dose_display,
           p_initiation_dose_mg: parsed.data.initiation_dose_mg,
           p_therapeutic_min_dose_mg: parsed.data.therapeutic_min_dose_mg,
           p_therapeutic_max_dose_mg: parsed.data.therapeutic_max_dose_mg,
@@ -1072,11 +1139,11 @@ const InitiationOfTreatment = ({
     await loadPendingRows();
   };
 
-  const renderTreatmentTable = (lineRows: AntidepressantMasterRow[]) => {
+  const renderTreatmentTable = (lineRows: AntidepressantMasterRow[], emptyMessage: string) => {
     if (lineRows.length === 0) {
       return (
         <div className="rounded-xl border border-dashed border-border/80 p-4 text-sm text-muted-foreground">
-          No medications are configured for this treatment line yet.
+          {emptyMessage}
         </div>
       );
     }
@@ -1169,6 +1236,60 @@ const InitiationOfTreatment = ({
             ))}
           </TableBody>
         </Table>
+      </div>
+    );
+  };
+
+  const renderLineTreatmentSection = (kind: TreatmentTableKind, lineRows: AntidepressantMasterRow[]) => {
+    const sectionTitle = getTreatmentTableTitle(selectedLine, kind);
+    const isCollapsed = collapsedTables[kind];
+
+    return (
+      <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h3 className="font-display text-lg font-semibold text-foreground">{sectionTitle}</h3>
+            {canEditRows && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                aria-label={`Add medication to ${sectionTitle}`}
+                onClick={() => openCreateDialog(Number(selectedLine), getDefaultMedicationTypeForTable(kind))}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-expanded={!isCollapsed}
+              aria-label={isCollapsed ? `Expand ${sectionTitle}` : `Collapse ${sectionTitle}`}
+              onClick={() =>
+                setCollapsedTables((prev) => ({
+                  ...prev,
+                  [kind]: !prev[kind],
+                }))
+              }
+            >
+              {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+            </Button>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {lineRows.length} medication{lineRows.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        {!isCollapsed ? (
+          <div className="mt-4">{renderTreatmentTable(lineRows, getTreatmentTableEmptyMessage(kind))}</div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-border/80 px-4 py-3 text-sm text-muted-foreground">
+            The medication table is collapsed. Expand it to review all medications in {sectionTitle}.
+          </div>
+        )}
       </div>
     );
   };
@@ -1363,53 +1484,8 @@ const InitiationOfTreatment = ({
                     <Card className="border-dashed border-border/80 bg-muted/15 shadow-none">
                       <CardContent className="space-y-8 p-4 sm:p-6">
                         <section className="space-y-4">
-                          <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <div className="flex items-center gap-3">
-                                <h3 className="font-display text-lg font-semibold text-foreground">
-                                  Line {selectedLine} Treatment
-                                </h3>
-                                {canEditRows && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    aria-label={`Add medication to Line ${selectedLine}`}
-                                    onClick={() => openCreateDialog(Number(selectedLine))}
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  aria-expanded={!isLineTableCollapsed}
-                                  aria-label={isLineTableCollapsed ? "Expand medication table" : "Collapse medication table"}
-                                  onClick={() => setIsLineTableCollapsed((prev) => !prev)}
-                                >
-                                  {isLineTableCollapsed ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronUp className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              </div>
-                              <span className="text-xs text-muted-foreground">
-                                {selectedLineRows.length} medication{selectedLineRows.length === 1 ? "" : "s"}
-                              </span>
-                            </div>
-
-                            {!isLineTableCollapsed ? (
-                              <div className="mt-4">{renderTreatmentTable(selectedLineRows)}</div>
-                            ) : (
-                              <div className="mt-4 rounded-xl border border-dashed border-border/80 px-4 py-3 text-sm text-muted-foreground">
-                                The medication table is collapsed. Expand it to review all medications in Line {selectedLine}.
-                              </div>
-                            )}
-                          </div>
+                          {renderLineTreatmentSection("monotherapy", selectedLineMonotherapyRows)}
+                          {renderLineTreatmentSection("adjunctive", selectedLineAdjunctiveRows)}
                         </section>
 
                         <div className="border-t border-border/70" />
@@ -1536,7 +1612,7 @@ const InitiationOfTreatment = ({
                                 <div className="rounded-xl border border-border/70 bg-background/70 p-4">
                                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Starting dose</p>
                                   <p className="mt-2 text-sm text-foreground">
-                                    {formatDoseCellValue(selectedMedication.initiation_dose_mg)}
+                                    {formatStartingDoseValue(selectedMedication)}
                                   </p>
                                 </div>
                                 <div className="rounded-xl border border-border/70 bg-background/70 p-4">
@@ -1957,12 +2033,26 @@ const InitiationOfTreatment = ({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="initiation_dose_display">Starting dose display</Label>
+              <Input
+                id="initiation_dose_display"
+                value={form.initiation_dose_display}
+                onChange={(event) => setForm((prev) => ({ ...prev, initiation_dose_display: event.target.value }))}
+                placeholder="Example: 1-2 mg"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Use this when the starting dose should display as a range or custom text.
+              </p>
+              {formErrors.initiation_dose_display && <p className="text-sm text-destructive">{formErrors.initiation_dose_display}</p>}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="initiation_dose_mg">Initiation dose (mg)</Label>
               <Input
                 id="initiation_dose_mg"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 value={form.initiation_dose_mg}
                 onChange={(event) => setForm((prev) => ({ ...prev, initiation_dose_mg: event.target.value }))}
               />
@@ -1975,7 +2065,7 @@ const InitiationOfTreatment = ({
                 id="therapeutic_min_dose_mg"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 value={form.therapeutic_min_dose_mg}
                 onChange={(event) => setForm((prev) => ({ ...prev, therapeutic_min_dose_mg: event.target.value }))}
               />
@@ -1988,7 +2078,7 @@ const InitiationOfTreatment = ({
                 id="therapeutic_max_dose_mg"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 value={form.therapeutic_max_dose_mg}
                 onChange={(event) => setForm((prev) => ({ ...prev, therapeutic_max_dose_mg: event.target.value }))}
               />
@@ -2001,7 +2091,7 @@ const InitiationOfTreatment = ({
                 id="max_dose_mg"
                 type="number"
                 min="0"
-                step="1"
+                step="any"
                 value={form.max_dose_mg}
                 onChange={(event) => setForm((prev) => ({ ...prev, max_dose_mg: event.target.value }))}
               />

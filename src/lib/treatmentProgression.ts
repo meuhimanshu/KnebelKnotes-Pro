@@ -26,10 +26,21 @@ export type ProgressionRecommendation = {
 };
 
 const STEP_CANDIDATES = [25, 20, 10, 5, 1];
+const DECIMAL_STEP_CANDIDATES = [2, 0.5, 0.25, 0.1];
+const FLOAT_EPSILON = 1e-9;
 
-export const formatDoseMg = (value: number) => `${value} mg`;
+const normalizeDoseNumber = (value: number) => Number.parseFloat(value.toFixed(4));
 
-export const formatDoseRangeMg = (min: number, max: number) => `${min}-${max} mg`;
+const formatDoseNumber = (value: number) => normalizeDoseNumber(value).toString();
+
+const isDivisibleByStep = (value: number, step: number) => {
+  const quotient = normalizeDoseNumber(value / step);
+  return Math.abs(quotient - Math.round(quotient)) < FLOAT_EPSILON;
+};
+
+export const formatDoseMg = (value: number) => `${formatDoseNumber(value)} mg`;
+
+export const formatDoseRangeMg = (min: number, max: number) => `${formatDoseNumber(min)}-${formatDoseNumber(max)} mg`;
 
 export const inferDoseStepMg = (drug: DoseBasedMedication) => {
   const checkpoints = [
@@ -39,19 +50,21 @@ export const inferDoseStepMg = (drug: DoseBasedMedication) => {
     drug.max_dose_mg,
   ];
 
-  return STEP_CANDIDATES.find((step) => checkpoints.every((value) => value % step === 0)) ?? 1;
+  const candidates = [...STEP_CANDIDATES, ...DECIMAL_STEP_CANDIDATES];
+
+  return candidates.find((step) => checkpoints.every((value) => isDivisibleByStep(value, step))) ?? 1;
 };
 
 export const buildDoseOptionsMg = (drug: DoseBasedMedication) => {
   const step = inferDoseStepMg(drug);
   const options: number[] = [];
 
-  for (let dose = 0; dose <= drug.max_dose_mg; dose += step) {
-    options.push(dose);
+  for (let dose = 0; dose <= drug.max_dose_mg + FLOAT_EPSILON; dose = normalizeDoseNumber(dose + step)) {
+    options.push(normalizeDoseNumber(dose));
   }
 
-  if (options[options.length - 1] !== drug.max_dose_mg) {
-    options.push(drug.max_dose_mg);
+  if (Math.abs(options[options.length - 1] - drug.max_dose_mg) > FLOAT_EPSILON) {
+    options.push(normalizeDoseNumber(drug.max_dose_mg));
   }
 
   return options;
