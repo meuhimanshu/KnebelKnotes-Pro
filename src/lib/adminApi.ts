@@ -1,14 +1,15 @@
 import { supabase } from "@/lib/supabaseClient";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 
-export type CreateSubAdminPayload = {
+export type CreateAdminPayload = {
   email: string;
   password: string;
   full_name: string;
   username: string;
+  role?: "sub_admin" | "super_admin";
 };
 
-export const createSubAdmin = async (payload: CreateSubAdminPayload) => {
+export const createAdminUser = async (payload: CreateAdminPayload) => {
   const { data, error } = await supabase.functions.invoke("create-sub-admin", {
     body: payload,
   });

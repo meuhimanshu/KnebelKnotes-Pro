@@ -7,22 +7,24 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ProfileImageUploader from "@/components/ProfileImageUploader";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUiPreferences } from "@/contexts/UiPreferencesContext";
 import { supabase } from "@/lib/supabaseClient";
-import { createSubAdmin } from "@/lib/adminApi";
+import { createAdminUser } from "@/lib/adminApi";
 import { format } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 
-type SubAdmin = {
+type AdminAccount = {
   id: string;
   email: string | null;
   full_name: string | null;
   username: string | null;
   profile_image_path: string | null;
   created_at: string | null;
+  role: "super_admin" | "sub_admin" | null;
 };
 
 const Settings = () => {
@@ -38,16 +40,17 @@ const Settings = () => {
   const [password, setPassword] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
-  const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
-  const [subAdminLoading, setSubAdminLoading] = useState(false);
-  const [subAdminError, setSubAdminError] = useState<string | null>(null);
-  const [newSubAdmin, setNewSubAdmin] = useState({
+  const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([]);
+  const [adminAccountsLoading, setAdminAccountsLoading] = useState(false);
+  const [adminAccountsError, setAdminAccountsError] = useState<string | null>(null);
+  const [newAdminAccount, setNewAdminAccount] = useState({
     email: "",
     password: "",
     fullName: "",
     username: "",
+    role: "sub_admin" as "sub_admin" | "super_admin",
   });
-  const [creatingSubAdmin, setCreatingSubAdmin] = useState(false);
+  const [creatingAdminAccount, setCreatingAdminAccount] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -56,25 +59,28 @@ const Settings = () => {
     setEmail(profile?.email ?? user.email ?? "");
   }, [user, profile]);
 
-  const loadSubAdmins = useCallback(async () => {
-    setSubAdminLoading(true);
+  const loadAdminAccounts = useCallback(async () => {
+    if (!user) return;
+
+    setAdminAccountsLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, email, full_name, username, profile_image_path, created_at")
-      .eq("role", "sub_admin")
+      .select("id, email, full_name, username, profile_image_path, created_at, role")
+      .in("role", ["super_admin", "sub_admin"])
+      .neq("id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
-      setSubAdminError(error.message);
-      setSubAdmins([]);
-      setSubAdminLoading(false);
+      setAdminAccountsError(error.message);
+      setAdminAccounts([]);
+      setAdminAccountsLoading(false);
       return;
     }
 
-    setSubAdmins(data ?? []);
-    setSubAdminError(null);
-    setSubAdminLoading(false);
-  }, []);
+    setAdminAccounts(data ?? []);
+    setAdminAccountsError(null);
+    setAdminAccountsLoading(false);
+  }, [user]);
 
   const getAvatarInitials = (name?: string | null) =>
     name
@@ -91,8 +97,8 @@ const Settings = () => {
 
   useEffect(() => {
     if (!isSuperAdmin) return;
-    void loadSubAdmins();
-  }, [isSuperAdmin, loadSubAdmins]);
+    void loadAdminAccounts();
+  }, [isSuperAdmin, loadAdminAccounts]);
 
   const handleProfileSave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -146,34 +152,35 @@ const Settings = () => {
     setSavingPassword(false);
   };
 
-  const handleCreateSubAdmin = async (event: React.FormEvent) => {
+  const handleCreateAdminAccount = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!isSuperAdmin) {
-      toast.error("You do not have permission to create sub admins.");
+      toast.error("You do not have permission to create admin accounts.");
       return;
     }
-    if (!newSubAdmin.email.trim() || !newSubAdmin.password.trim() || !newSubAdmin.fullName.trim()) {
+    if (!newAdminAccount.email.trim() || !newAdminAccount.password.trim() || !newAdminAccount.fullName.trim()) {
       toast.error("Enter a name, email, and temporary password.");
       return;
     }
 
-    setCreatingSubAdmin(true);
-    const { error } = await createSubAdmin({
-      email: newSubAdmin.email.trim(),
-      password: newSubAdmin.password.trim(),
-      full_name: newSubAdmin.fullName.trim(),
-      username: newSubAdmin.username.trim() || newSubAdmin.email.split("@")[0],
+    setCreatingAdminAccount(true);
+    const { error } = await createAdminUser({
+      email: newAdminAccount.email.trim(),
+      password: newAdminAccount.password.trim(),
+      full_name: newAdminAccount.fullName.trim(),
+      username: newAdminAccount.username.trim() || newAdminAccount.email.split("@")[0],
+      role: newAdminAccount.role,
     });
-    setCreatingSubAdmin(false);
+    setCreatingAdminAccount(false);
 
     if (error) {
-      toast.error(error || "Unable to create sub admin.");
+      toast.error(error || "Unable to create admin account.");
       return;
     }
 
-    toast.success("Sub Admin created.");
-    setNewSubAdmin({ email: "", password: "", fullName: "", username: "" });
-    await loadSubAdmins();
+    toast.success(newAdminAccount.role === "super_admin" ? "Super Admin created." : "Sub Admin created.");
+    setNewAdminAccount({ email: "", password: "", fullName: "", username: "", role: "sub_admin" });
+    await loadAdminAccounts();
   };
 
   return (
@@ -341,98 +348,117 @@ const Settings = () => {
 
             {isSuperAdmin && (
               <Card>
-                <form onSubmit={handleCreateSubAdmin}>
+                <form onSubmit={handleCreateAdminAccount}>
                   <CardHeader>
-                    <CardTitle>Sub Admins</CardTitle>
-                    <CardDescription>Invite and manage sub admins.</CardDescription>
+                    <CardTitle>Admin Accounts</CardTitle>
+                    <CardDescription>Create and manage super admin and sub admin accounts.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="sub-admin-name">Name</Label>
+                        <Label htmlFor="admin-account-name">Name</Label>
                         <Input
-                          id="sub-admin-name"
-                          value={newSubAdmin.fullName}
-                          onChange={(event) => setNewSubAdmin((prev) => ({ ...prev, fullName: event.target.value }))}
+                          id="admin-account-name"
+                          value={newAdminAccount.fullName}
+                          onChange={(event) => setNewAdminAccount((prev) => ({ ...prev, fullName: event.target.value }))}
                           placeholder="Alex Morgan"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="sub-admin-username">Username</Label>
+                        <Label htmlFor="admin-account-username">Username</Label>
                         <Input
-                          id="sub-admin-username"
-                          value={newSubAdmin.username}
-                          onChange={(event) => setNewSubAdmin((prev) => ({ ...prev, username: event.target.value }))}
+                          id="admin-account-username"
+                          value={newAdminAccount.username}
+                          onChange={(event) => setNewAdminAccount((prev) => ({ ...prev, username: event.target.value }))}
                           placeholder="alex.morgan"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="sub-admin-email">Email</Label>
+                        <Label htmlFor="admin-account-email">Email</Label>
                         <Input
-                          id="sub-admin-email"
+                          id="admin-account-email"
                           type="email"
-                          value={newSubAdmin.email}
-                          onChange={(event) => setNewSubAdmin((prev) => ({ ...prev, email: event.target.value }))}
+                          value={newAdminAccount.email}
+                          onChange={(event) => setNewAdminAccount((prev) => ({ ...prev, email: event.target.value }))}
                           placeholder="alex@example.com"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="sub-admin-password">Temporary password</Label>
+                        <Label htmlFor="admin-account-password">Temporary password</Label>
                         <Input
-                          id="sub-admin-password"
+                          id="admin-account-password"
                           type="password"
-                          value={newSubAdmin.password}
-                          onChange={(event) => setNewSubAdmin((prev) => ({ ...prev, password: event.target.value }))}
+                          value={newAdminAccount.password}
+                          onChange={(event) => setNewAdminAccount((prev) => ({ ...prev, password: event.target.value }))}
                           placeholder="Set a temporary password"
                         />
                       </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="admin-account-role">Role</Label>
+                        <Select
+                          value={newAdminAccount.role}
+                          onValueChange={(value: "sub_admin" | "super_admin") =>
+                            setNewAdminAccount((prev) => ({ ...prev, role: value }))
+                          }
+                        >
+                          <SelectTrigger id="admin-account-role">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sub_admin">Sub Admin</SelectItem>
+                            <SelectItem value="super_admin">Super Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div>
-                      <Button type="submit" disabled={creatingSubAdmin} className="w-full sm:w-auto">
-                        {creatingSubAdmin ? "Creating..." : "Create sub admin"}
+                      <Button type="submit" disabled={creatingAdminAccount} className="w-full sm:w-auto">
+                        {creatingAdminAccount ? "Creating..." : "Create admin account"}
                       </Button>
                     </div>
                     <div className="space-y-3">
-                      <h3 className="text-sm font-semibold text-foreground">Managed Sub Admins</h3>
-                      {subAdminLoading && (
-                        <p className="text-sm text-muted-foreground">Loading sub admins...</p>
+                      <h3 className="text-sm font-semibold text-foreground">Managed Admin Accounts</h3>
+                      {adminAccountsLoading && (
+                        <p className="text-sm text-muted-foreground">Loading admin accounts...</p>
                       )}
-                      {subAdminError && (
-                        <p className="text-sm text-destructive">{subAdminError}</p>
+                      {adminAccountsError && (
+                        <p className="text-sm text-destructive">{adminAccountsError}</p>
                       )}
-                      {!subAdminLoading && !subAdminError && subAdmins.length === 0 && (
-                        <p className="text-sm text-muted-foreground">No sub admins yet.</p>
+                      {!adminAccountsLoading && !adminAccountsError && adminAccounts.length === 0 && (
+                        <p className="text-sm text-muted-foreground">No additional admin accounts yet.</p>
                       )}
-                      {!subAdminLoading && subAdmins.length > 0 && (
+                      {!adminAccountsLoading && adminAccounts.length > 0 && (
                         <div className="space-y-2">
-                          {subAdmins.map((subAdmin) => (
+                          {adminAccounts.map((adminAccount) => (
                             <div
-                              key={subAdmin.id}
+                              key={adminAccount.id}
                               className="flex flex-col justify-between gap-3 rounded-xl border border-border/70 bg-muted/40 p-3 sm:flex-row sm:items-center sm:p-4"
                             >
                               <div className="flex items-center gap-3">
                                 <Avatar className="h-10 w-10">
                                   <AvatarImage
-                                    src={buildAvatarUrl(subAdmin.profile_image_path) ?? undefined}
-                                    alt={subAdmin.full_name ?? subAdmin.username ?? "Sub Admin"}
+                                    src={buildAvatarUrl(adminAccount.profile_image_path) ?? undefined}
+                                    alt={adminAccount.full_name ?? adminAccount.username ?? "Admin"}
                                   />
                                   <AvatarFallback className="text-xs">
-                                    {getAvatarInitials(subAdmin.full_name || subAdmin.username)}
+                                    {getAvatarInitials(adminAccount.full_name || adminAccount.username)}
                                   </AvatarFallback>
                                 </Avatar>
                                 <div>
                                   <p className="text-sm font-medium text-foreground">
-                                    {subAdmin.full_name || subAdmin.username || subAdmin.email}
+                                    {adminAccount.full_name || adminAccount.username || adminAccount.email}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    {subAdmin.email || "No email"} ·{" "}
-                                    {subAdmin.created_at
-                                      ? format(new Date(subAdmin.created_at), "MMM dd, yyyy")
+                                    {adminAccount.email || "No email"} ·{" "}
+                                    {adminAccount.created_at
+                                      ? format(new Date(adminAccount.created_at), "MMM dd, yyyy")
                                       : "Unknown date"}
                                   </p>
                                 </div>
                               </div>
-                              <Badge variant="secondary">Sub Admin</Badge>
+                              <Badge variant={adminAccount.role === "super_admin" ? "default" : "secondary"}>
+                                {adminAccount.role === "super_admin" ? "Super Admin" : "Sub Admin"}
+                              </Badge>
                             </div>
                           ))}
                         </div>

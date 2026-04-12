@@ -52,10 +52,15 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { email, password, full_name, username } = body ?? {};
+    const { email, password, full_name, username, role } = body ?? {};
+    const normalizedRole = role === "super_admin" ? "super_admin" : role === undefined ? "sub_admin" : null;
 
     if (!email || !password || !full_name) {
       return new Response("Missing required fields", { status: 400, headers: corsHeaders });
+    }
+
+    if (!normalizedRole) {
+      return new Response("Invalid role. Use sub_admin or super_admin.", { status: 400, headers: corsHeaders });
     }
 
     const { data: createdUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -65,6 +70,7 @@ serve(async (req) => {
       user_metadata: {
         full_name,
         username,
+        role: normalizedRole,
       },
     });
 
@@ -77,7 +83,7 @@ serve(async (req) => {
       email,
       full_name,
       username,
-      role: "sub_admin",
+      role: normalizedRole,
     });
 
     if (profileError) {
